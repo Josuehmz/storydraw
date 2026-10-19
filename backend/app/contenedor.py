@@ -17,10 +17,27 @@ from app.dominio.composicion import Compositor, RecortadorRembg, RecortadorUmbra
 from app.dominio.costos import Tarifario
 from app.dominio.moderacion import Moderacion
 from app.dominio.orquestador import Orquestador
-from app.dominio.puertos import IAlmacen, ICorreo, IImagen, ITexto, IVision, IVoz
+from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision, IVoz
 from app.infra.adaptadores.almacen import AlmacenMemoria, AlmacenS3
 from app.infra.adaptadores.correo_smtp import CorreoSMTP
-from app.infra.adaptadores.falsos import CorreoFalso, ImagenFalsa, TextoFalso, VisionFalsa, VozFalsa
+from app.infra.adaptadores.falsos import (
+    CorreoFalso,
+    ImagenFalsa,
+    ImagenNoDisponible,
+    TextoFalso,
+    VisionFalsa,
+    VozFalsa,
+    VozNoDisponible,
+)
+from app.infra.adaptadores.moderacion_llm import ModeracionLLMSoloDesarrollo
+from app.infra.adaptadores.proveedor_cloudflare import (
+    ClienteCloudflare,
+    ImagenCloudflare,
+    TextoCloudflare,
+    VisionCloudflare,
+    VozCloudflare,
+)
+from app.infra.adaptadores.proveedor_ollama import ClienteOllama, TextoOllama, VisionOllama
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
 from app.infra.adaptadores.voz_elevenlabs import VozElevenLabs
 from app.infra.bd import crear_fabrica, crear_motor
@@ -34,6 +51,7 @@ class Contenedor:
     fabrica: async_sessionmaker[AsyncSession]
     vision: IVision
     texto: ITexto
+    moderador: IModerador
     imagen: IImagen
     voz: IVoz
     correo: ICorreo
@@ -63,41 +81,119 @@ def construir(settings: Settings) -> Contenedor:
         )
     esfuerzo = settings.openai_esfuerzo_razonamiento
 
-    vision: IVision = (
-        VisionOpenAI(openai_cliente, settings.openai_modelo_vision, esfuerzo)
-        if settings.proveedor_vision == "openai"
-        else VisionFalsa()
+    cloudflare = ClienteCloudflare(
+        http,
+        settings.cloudflare_account_id,
+        _secreto(settings.cloudflare_api_token),
+        settings.cloudflare_timeout_s,
+        settings.cloudflare_usd_por_mil_neuronas,
+        (
+            settings.cloudflare_neuronas_texto_entrada_mtok,
+            settings.cloudflare_neuronas_texto_salida_mtok,
+        ),
+        settings.cloudflare_desactivar_razonamiento,
     )
-    texto: ITexto = (
-        TextoOpenAI(
-            openai_cliente,
-            settings.openai_modelo_texto,
-            settings.openai_modelo_moderacion,
-            esfuerzo,
-        )
-        if settings.proveedor_texto == "openai"
-        else TextoFalso()
-    )
-    imagen: IImagen = (
-        ImagenOpenAI(
-            openai_cliente,
-            settings.openai_modelo_imagen,
-            settings.openai_calidad_imagen,
-            settings.openai_tamano_imagen,
-        )
-        if settings.proveedor_imagen == "openai"
-        else ImagenFalsa()
-    )
-    voz: IVoz = (
-        VozElevenLabs(
-            http,
-            _secreto(settings.elevenlabs_api_key),
-            settings.elevenlabs_voz_id,
-            settings.elevenlabs_modelo,
-        )
-        if settings.proveedor_voz == "elevenlabs"
-        else VozFalsa()
-    )
+    ollama = ClienteOllama(http, settings.ollama_url, settings.ollama_timeout_s)
+
+    vision: IVision
+    match settings.proveedor_vision:
+        case "openai":
+            vision = VisionOpenAI(openai_cliente, settings.openai_modelo_vision, esfuerzo)
+        case "cloudflare":
+            vision = VisionCloudflare(
+                cloudflare,
+                settings.cloudflare_modelo_vision,
+                (
+                    settings.cloudflare_neuronas_vision_entrada_mtok,
+                    settings.cloudflare_neuronas_vision_salida_mtok,
+                ),
+            )
+        case "ollama":
+            vision = VisionOllama(ollama, settings.ollama_modelo_vision)
+        case _:
+            vision = VisionFalsa()
+
+    texto: ITexto
+    match settings.proveedor_texto:
+        case "openai":
+            texto = TextoOpenAI(
+                openai_cliente,
+                settings.openai_modelo_texto,
+                settings.openai_modelo_moderacion,
+                esfuerzo,
+            )
+        case "cloudflare":
+            texto = TextoCloudflare(cloudflare, settings.cloudflare_modelo_texto)
+        case "ollama":
+            texto = TextoOllama(ollama, settings.ollama_modelo_texto)
+        case _:
+            texto = TextoFalso()
+
+    moderador: IModerador
+    match settings.proveedor_moderacion:
+        case "openai":
+            moderador = (
+                texto
+                if isinstance(texto, TextoOpenAI)
+                else TextoOpenAI(
+                    openai_cliente,
+                    settings.openai_modelo_texto,
+                    settings.openai_modelo_moderacion,
+                )
+            )
+        case "cloudflare":
+            moderador = ModeracionLLMSoloDesarrollo(
+                cloudflare, settings.cloudflare_modelo_moderacion
+            )
+        case "ollama":
+            moderador = ModeracionLLMSoloDesarrollo(ollama, settings.ollama_modelo_moderacion)
+        case _:
+            # El falso de texto también modera: si ambos son falsos, es la misma instancia.
+            moderador = texto if isinstance(texto, TextoFalso) else TextoFalso()
+
+    imagen: IImagen
+    match settings.proveedor_imagen:
+        case "openai":
+            imagen = ImagenOpenAI(
+                openai_cliente,
+                settings.openai_modelo_imagen,
+                settings.openai_calidad_imagen,
+                settings.openai_tamano_imagen,
+            )
+        case "cloudflare":
+            imagen = ImagenCloudflare(
+                cloudflare,
+                settings.cloudflare_modelo_imagen,
+                settings.cloudflare_pasos_imagen,
+                settings.cloudflare_neuronas_imagen_tesela,
+                settings.cloudflare_neuronas_imagen_paso,
+            )
+        case "ninguno":
+            imagen = ImagenNoDisponible()
+        case _:
+            imagen = ImagenFalsa()
+
+    voz: IVoz
+    match settings.proveedor_voz:
+        case "elevenlabs":
+            voz = VozElevenLabs(
+                http,
+                _secreto(settings.elevenlabs_api_key),
+                settings.elevenlabs_voz_id,
+                settings.elevenlabs_modelo,
+            )
+        case "cloudflare":
+            voz = VozCloudflare(
+                cloudflare,
+                settings.cloudflare_modelo_voz,
+                settings.cloudflare_idioma_voz,
+                settings.cloudflare_neuronas_voz_minuto,
+            )
+        case "ninguno":
+            voz = VozNoDisponible()
+        case _:
+            voz = VozFalsa()
+
     correo: ICorreo = (
         CorreoSMTP(
             settings.smtp_host,
@@ -136,7 +232,7 @@ def construir(settings: Settings) -> Contenedor:
         texto=texto,
         imagen=imagen,
         voz=voz,
-        moderacion=Moderacion(texto),
+        moderacion=Moderacion(moderador),
         compositor=Compositor(recortador),
         almacen=almacen,
         tarifario=tarifario,
@@ -152,6 +248,7 @@ def construir(settings: Settings) -> Contenedor:
         fabrica=crear_fabrica(motor),
         vision=vision,
         texto=texto,
+        moderador=moderador,
         imagen=imagen,
         voz=voz,
         correo=correo,

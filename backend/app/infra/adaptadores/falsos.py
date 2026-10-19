@@ -15,6 +15,7 @@ from app.dominio.puertos import (
     Hipotesis,
     ICorreo,
     IImagen,
+    IModerador,
     ITexto,
     IVision,
     IVoz,
@@ -51,7 +52,7 @@ class VisionFalsa(IVision):
         return ResultadoVision(list(self.hipotesis), Uso(tokens_entrada=2048, tokens_salida=60))
 
 
-class TextoFalso(ITexto):
+class TextoFalso(ITexto, IModerador):
     """Escribe un cuento de plantilla. `cuentos_forzados` permite inyectar respuestas."""
 
     proveedor = "falso"
@@ -107,6 +108,27 @@ class ImagenFalsa(IImagen):
         salida = io.BytesIO()
         img.save(salida, format="PNG")
         return ResultadoImagen(salida.getvalue(), Uso(imagenes=1))
+
+
+class ImagenNoDisponible(IImagen):
+    """`PROVEEDOR_IMAGEN=ninguno`: el proveedor no genera imágenes (p. ej. Ollama).
+
+    Falla al instante y el orquestador degrada a un fondo del banco, como si cayera.
+    """
+
+    proveedor = "ninguno"
+
+    async def generar_fondo(self, descripcion: str) -> ResultadoImagen:
+        raise ProveedorCaido("sin proveedor de imagen configurado")
+
+
+class VozNoDisponible(IVoz):
+    """`PROVEEDOR_VOZ=ninguno`: el cuento se entrega escrito, con el aviso de sin narración."""
+
+    proveedor = "ninguno"
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        raise ProveedorCaido("sin proveedor de voz configurado")
 
 
 class VozFalsa(IVoz):

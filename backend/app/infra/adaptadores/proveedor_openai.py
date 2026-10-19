@@ -14,6 +14,7 @@ from app.dominio.puertos import (
     CuentoTexto,
     Hipotesis,
     IImagen,
+    IModerador,
     ITexto,
     IVision,
     PaginaTexto,
@@ -23,76 +24,10 @@ from app.dominio.puertos import (
     Uso,
     VeredictoModeracion,
 )
-
-_ESQUEMA_VISION = {
-    "name": "identificacion_dibujo",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "hipotesis": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "etiqueta": {"type": "string"},
-                        "confianza": {"type": "number"},
-                    },
-                    "required": ["etiqueta", "confianza"],
-                },
-            }
-        },
-        "required": ["hipotesis"],
-    },
-}
-
-_ESQUEMA_CUENTO = {
-    "name": "cuento_infantil",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "titulo": {"type": "string"},
-            "paginas": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "texto": {"type": "string"},
-                        "escena": {"type": "string"},
-                    },
-                    "required": ["texto", "escena"],
-                },
-            },
-        },
-        "required": ["titulo", "paginas"],
-    },
-}
-
-_PROMPT_VISION = (
-    "Eres un asistente amable que mira dibujos hechos por niños de 6 a 12 años. "
-    "Di qué personaje u objeto principal dibujó el niño. Devuelve de 2 a 4 hipótesis "
-    "distintas, en español, de 1 a 3 palabras cada una (por ejemplo «un perro», «un "
-    "dragón»), con una confianza entre 0 y 1. Sé generoso: es un dibujo infantil, no "
-    "una foto. Nunca describas a personas reales ni datos personales."
-)
-
-_PROMPT_CUENTO = (
-    "Eres un autor de cuentos infantiles en español. Escribe un cuento para un niño de "
-    "{edad} años cuyo protagonista es {personaje}, tal como lo dibujó el niño.\n"
-    "Reglas:\n"
-    "1. Exactamente {paginas} páginas, de 40 a 70 palabras cada una, "
-    "con inicio, nudo y final feliz.\n"
-    "2. Vocabulario adecuado a la edad; frases cortas; tono cálido.\n"
-    "3. Nada de violencia, miedo intenso, armas, sustancias, romance ni marcas comerciales.\n"
-    "4. El protagonista no cambia de forma ni de nombre.\n"
-    "5. En «escena», describe en inglés solo el fondo de esa página (lugar, luz, colores), "
-    "sin personajes ni texto, en estilo ilustración infantil."
-)
+from app.infra.adaptadores.comun import ESQUEMA_CUENTO as _ESQUEMA_CUENTO
+from app.infra.adaptadores.comun import ESQUEMA_VISION as _ESQUEMA_VISION
+from app.infra.adaptadores.comun import PROMPT_CUENTO as _PROMPT_CUENTO
+from app.infra.adaptadores.comun import PROMPT_VISION as _PROMPT_VISION
 
 
 def _uso_chat(respuesta) -> Uso:
@@ -136,7 +71,7 @@ class VisionOpenAI(_BaseOpenAI, IVision):
         return ResultadoVision(hipotesis, _uso_chat(respuesta))
 
 
-class TextoOpenAI(_BaseOpenAI, ITexto):
+class TextoOpenAI(_BaseOpenAI, ITexto, IModerador):
     def __init__(self, cliente: AsyncOpenAI, modelo: str, modelo_moderacion: str, esfuerzo=""):
         super().__init__(cliente, modelo, esfuerzo)
         self._modelo_moderacion = modelo_moderacion

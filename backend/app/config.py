@@ -49,10 +49,13 @@ class Settings(BaseSettings):
     contenido_emails: str = ""
 
     # Un adaptador por capacidad: cambiar de proveedor es cambiar esta variable
-    proveedor_vision: Literal["openai", "falso"] = "openai"
-    proveedor_texto: Literal["openai", "falso"] = "openai"
-    proveedor_imagen: Literal["openai", "falso"] = "openai"
-    proveedor_voz: Literal["elevenlabs", "falso"] = "elevenlabs"
+    # (ninguno = el proveedor no tiene esa capacidad y el paso se degrada)
+    proveedor_vision: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
+    proveedor_texto: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
+    # ollama y cloudflare en moderación usan un LLM genérico: SOLO DESARROLLO
+    proveedor_moderacion: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
+    proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
+    proveedor_voz: Literal["elevenlabs", "cloudflare", "ninguno", "falso"] = "elevenlabs"
     proveedor_correo: Literal["smtp", "falso"] = "smtp"
     almacen: Literal["s3", "memoria"] = "s3"
 
@@ -70,6 +73,37 @@ class Settings(BaseSettings):
     elevenlabs_api_key: SecretStr | None = None
     elevenlabs_voz_id: str = ""
     elevenlabs_modelo: str = "eleven_flash_v2_5"
+
+    # Cloudflare Workers AI: modelos verificados en developers.cloudflare.com/workers-ai/models
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: SecretStr | None = None
+    cloudflare_modelo_vision: str = "@cf/google/gemma-4-26b-a4b-it"
+    cloudflare_modelo_texto: str = "@cf/google/gemma-4-26b-a4b-it"
+    cloudflare_modelo_moderacion: str = "@cf/google/gemma-4-26b-a4b-it"
+    cloudflare_modelo_imagen: str = "@cf/black-forest-labs/flux-1-schnell"
+    cloudflare_pasos_imagen: int = Field(4, ge=1, le=8)
+    cloudflare_modelo_voz: str = "@cf/myshell-ai/melotts"
+    cloudflare_idioma_voz: str = "es"
+    # Envía chat_template_kwargs.enable_thinking=false (Gemma 4, Qwen 3). Ponlo en false
+    # si el modelo de texto elegido no acepta ese campo.
+    cloudflare_desactivar_razonamiento: bool = True
+    cloudflare_timeout_s: float = 120.0
+    # Tarifa de neuronas y tarifas publicadas de cada modelo (cambian si cambias de modelo)
+    cloudflare_usd_por_mil_neuronas: float = 0.011
+    cloudflare_neuronas_texto_entrada_mtok: float = 9091.0
+    cloudflare_neuronas_texto_salida_mtok: float = 27273.0
+    cloudflare_neuronas_vision_entrada_mtok: float = 9091.0
+    cloudflare_neuronas_vision_salida_mtok: float = 27273.0
+    cloudflare_neuronas_imagen_tesela: float = 4.80
+    cloudflare_neuronas_imagen_paso: float = 9.60
+    cloudflare_neuronas_voz_minuto: float = 18.63
+
+    # Ollama (prueba local, gratis, por CPU): solo texto y visión
+    ollama_url: str = "http://localhost:11434"
+    ollama_modelo_texto: str = "llama3.2:3b"
+    ollama_modelo_vision: str = "qwen2.5vl:3b"
+    ollama_modelo_moderacion: str = "llama3.2:3b"
+    ollama_timeout_s: float = 900.0
 
     # Correo transaccional
     smtp_host: str = ""
@@ -119,6 +153,7 @@ class Settings(BaseSettings):
                 for nombre, valor in (
                     ("PROVEEDOR_VISION", self.proveedor_vision),
                     ("PROVEEDOR_TEXTO", self.proveedor_texto),
+                    ("PROVEEDOR_MODERACION", self.proveedor_moderacion),
                     ("PROVEEDOR_IMAGEN", self.proveedor_imagen),
                     ("PROVEEDOR_VOZ", self.proveedor_voz),
                     ("PROVEEDOR_CORREO", self.proveedor_correo),
@@ -129,13 +164,24 @@ class Settings(BaseSettings):
                 raise ValueError(f"En producción no se permiten adaptadores falsos: {falsos}")
             if self.almacen == "memoria":
                 raise ValueError("En producción ALMACEN debe ser s3")
-        usa_openai = "openai" in (
+            if self.proveedor_moderacion in ("ollama", "cloudflare"):
+                raise ValueError(
+                    "La moderación con LLM genérico es solo para desarrollo: "
+                    "en producción usa PROVEEDOR_MODERACION=openai"
+                )
+        proveedores = (
             self.proveedor_vision,
             self.proveedor_texto,
+            self.proveedor_moderacion,
             self.proveedor_imagen,
+            self.proveedor_voz,
         )
-        if usa_openai and not self.openai_api_key:
+        if "openai" in proveedores and not self.openai_api_key:
             raise ValueError("Falta OPENAI_API_KEY (o usa PROVEEDOR_*=falso en desarrollo)")
+        if "cloudflare" in proveedores and not (
+            self.cloudflare_account_id and self.cloudflare_api_token
+        ):
+            raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")
         if self.proveedor_voz == "elevenlabs" and not (
             self.elevenlabs_api_key and self.elevenlabs_voz_id
         ):

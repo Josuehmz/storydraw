@@ -29,6 +29,7 @@ def settings_de_prueba(ruta_bd: Path, **cambios) -> Settings:
         jwt_secreto="s" * 48,
         proveedor_vision="falso",
         proveedor_texto="falso",
+        proveedor_moderacion="falso",
         proveedor_imagen="falso",
         proveedor_voz="falso",
         proveedor_correo="falso",

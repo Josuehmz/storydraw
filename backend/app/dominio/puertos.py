@@ -19,6 +19,11 @@ class Uso:
     tokens_salida: int = 0
     imagenes: int = 0
     caracteres: int = 0
+    # Workers AI factura en neuronas; se guardan para auditar el costo.
+    neuronas: float = 0.0
+    # Si el adaptador ya calculó su costo (Ollama = 0, Cloudflare = neuronas a USD),
+    # el tarifario lo respeta en vez de aplicar las tarifas por token.
+    costo_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,8 @@ class ResultadoAudio:
 
 class IVision(ABC):
     proveedor: str = "desconocido"
+    # Timeout propio del adaptador (p. ej. Ollama por CPU tarda minutos). None = el global.
+    timeout_s: float | None = None
 
     @abstractmethod
     async def identificar(self, imagen_png: bytes) -> ResultadoVision:
@@ -84,10 +91,18 @@ class IVision(ABC):
 
 class ITexto(ABC):
     proveedor: str = "desconocido"
+    timeout_s: float | None = None
 
     @abstractmethod
     async def escribir_cuento(self, solicitud: SolicitudCuento) -> CuentoTexto:
         """Escribe un cuento de `solicitud.paginas` páginas con una escena por página."""
+
+
+class IModerador(ABC):
+    """Proveedor de moderación. Se elige aparte del de texto (`PROVEEDOR_MODERACION`)."""
+
+    proveedor: str = "desconocido"
+    timeout_s: float | None = None
 
     @abstractmethod
     async def moderar(self, texto: str) -> VeredictoModeracion:
@@ -96,6 +111,7 @@ class ITexto(ABC):
 
 class IImagen(ABC):
     proveedor: str = "desconocido"
+    timeout_s: float | None = None
 
     @abstractmethod
     async def generar_fondo(self, descripcion: str) -> ResultadoImagen:
@@ -104,6 +120,7 @@ class IImagen(ABC):
 
 class IVoz(ABC):
     proveedor: str = "desconocido"
+    timeout_s: float | None = None
 
     @abstractmethod
     async def narrar(self, texto: str) -> ResultadoAudio:
