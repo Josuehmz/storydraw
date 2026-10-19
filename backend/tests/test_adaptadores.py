@@ -54,7 +54,9 @@ def _cliente(peticiones: list, respuesta: dict) -> AsyncOpenAI:
 
 async def test_vision_openai():
     peticiones: list = []
-    cliente = _cliente(peticiones, _chat({"hipotesis": [{"etiqueta": "un gato", "confianza": 0.7}]}))
+    cliente = _cliente(
+        peticiones, _chat({"hipotesis": [{"etiqueta": "un gato", "confianza": 0.7}]})
+    )
     res = await VisionOpenAI(cliente, "gpt-5.6-luna", "low").identificar(b"\x89PNG")
     ruta, cuerpo = peticiones[0]
     assert ruta.endswith("/chat/completions")
@@ -72,7 +74,8 @@ async def test_texto_openai_cuento_sin_datos_del_nino():
     texto = TextoOpenAI(cliente, "gpt-5.6-luna", "omni-moderation-latest")
     cuento = await texto.escribir_cuento(SolicitudCuento("un gato", 9))
     _, cuerpo = peticiones[0]
-    assert "un gato" in cuerpo["messages"][0]["content"] and "9 años" in cuerpo["messages"][0]["content"]
+    sistema = cuerpo["messages"][0]["content"]
+    assert "un gato" in sistema and "9 años" in sistema
     assert "reasoning_effort" not in cuerpo  # vacío = no se envía
     assert cuento.titulo == "El gato" and len(cuento.paginas) == 3
     assert cuento.uso.tokens_salida == 30
