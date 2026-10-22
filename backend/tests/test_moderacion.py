@@ -36,7 +36,7 @@ def test_cuento_rechazado_no_se_muestra_y_va_a_la_cola(entorno):
     assert cuento["paginas"] == [] and cuento["titulo"] is None
     # Se regeneró hasta el máximo (1 + 2 regeneraciones) sin exponer nada.
     assert entorno.c.texto.llamadas_cuento == 3
-    assert entorno.c.imagen.llamadas == 0 and entorno.c.voz.llamadas == 0
+    assert entorno.c.imagen.llamadas == 0
     assert entorno.c.almacen.objetos == {}
     assert (
         entorno.cliente.get(f"/v1/cuentos/{cuento_id}/paginas/1/imagen", headers=cab).status_code

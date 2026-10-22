@@ -55,7 +55,6 @@ class Settings(BaseSettings):
     # ollama y cloudflare en moderación usan un LLM genérico: SOLO DESARROLLO
     proveedor_moderacion: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
     proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
-    proveedor_voz: Literal["elevenlabs", "cloudflare", "ninguno", "falso"] = "elevenlabs"
     proveedor_correo: Literal["smtp", "falso"] = "smtp"
     almacen: Literal["s3", "memoria"] = "s3"
 
@@ -69,11 +68,6 @@ class Settings(BaseSettings):
     openai_tamano_imagen: str = "1024x1024"
     openai_esfuerzo_razonamiento: str = "low"
 
-    # ElevenLabs: narración
-    elevenlabs_api_key: SecretStr | None = None
-    elevenlabs_voz_id: str = ""
-    elevenlabs_modelo: str = "eleven_flash_v2_5"
-
     # Cloudflare Workers AI: modelos verificados en developers.cloudflare.com/workers-ai/models
     cloudflare_account_id: str = ""
     cloudflare_api_token: SecretStr | None = None
@@ -82,8 +76,6 @@ class Settings(BaseSettings):
     cloudflare_modelo_moderacion: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_imagen: str = "@cf/black-forest-labs/flux-1-schnell"
     cloudflare_pasos_imagen: int = Field(4, ge=1, le=8)
-    cloudflare_modelo_voz: str = "@cf/myshell-ai/melotts"
-    cloudflare_idioma_voz: str = "es"
     # Envía chat_template_kwargs.enable_thinking=false (Gemma 4, Qwen 3). Ponlo en false
     # si el modelo de texto elegido no acepta ese campo.
     cloudflare_desactivar_razonamiento: bool = True
@@ -96,13 +88,13 @@ class Settings(BaseSettings):
     cloudflare_neuronas_vision_salida_mtok: float = 27273.0
     cloudflare_neuronas_imagen_tesela: float = 4.80
     cloudflare_neuronas_imagen_paso: float = 9.60
-    cloudflare_neuronas_voz_minuto: float = 18.63
 
-    # Ollama (prueba local, gratis, por CPU): solo texto y visión
+    # Ollama (prueba local, gratis, por CPU): texto, visión y moderación de desarrollo.
+    # gemma3:4b ve imágenes, así que un solo modelo cubre las tres capacidades.
     ollama_url: str = "http://localhost:11434"
-    ollama_modelo_texto: str = "llama3.2:3b"
-    ollama_modelo_vision: str = "qwen2.5vl:3b"
-    ollama_modelo_moderacion: str = "llama3.2:3b"
+    ollama_modelo_texto: str = "gemma3:4b"
+    ollama_modelo_vision: str = "gemma3:4b"
+    ollama_modelo_moderacion: str = "gemma3:4b"
     ollama_timeout_s: float = 900.0
 
     # Correo transaccional
@@ -143,7 +135,6 @@ class Settings(BaseSettings):
     precio_vision_entrada_mtok: float = 0.20
     precio_vision_salida_mtok: float = 1.20
     precio_imagen: float = 0.005
-    precio_voz_mil_caracteres: float = 0.05
 
     @model_validator(mode="after")
     def _validar(self) -> Settings:
@@ -155,7 +146,6 @@ class Settings(BaseSettings):
                     ("PROVEEDOR_TEXTO", self.proveedor_texto),
                     ("PROVEEDOR_MODERACION", self.proveedor_moderacion),
                     ("PROVEEDOR_IMAGEN", self.proveedor_imagen),
-                    ("PROVEEDOR_VOZ", self.proveedor_voz),
                     ("PROVEEDOR_CORREO", self.proveedor_correo),
                 )
                 if valor == "falso"
@@ -174,7 +164,6 @@ class Settings(BaseSettings):
             self.proveedor_texto,
             self.proveedor_moderacion,
             self.proveedor_imagen,
-            self.proveedor_voz,
         )
         if "openai" in proveedores and not self.openai_api_key:
             raise ValueError("Falta OPENAI_API_KEY (o usa PROVEEDOR_*=falso en desarrollo)")
@@ -182,10 +171,6 @@ class Settings(BaseSettings):
             self.cloudflare_account_id and self.cloudflare_api_token
         ):
             raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")
-        if self.proveedor_voz == "elevenlabs" and not (
-            self.elevenlabs_api_key and self.elevenlabs_voz_id
-        ):
-            raise ValueError("Faltan ELEVENLABS_API_KEY y ELEVENLABS_VOZ_ID")
         if self.proveedor_correo == "smtp" and not (self.smtp_host and self.smtp_remitente):
             raise ValueError("Faltan SMTP_HOST y SMTP_REMITENTE")
         if self.almacen == "s3" and not (self.s3_access_key and self.s3_secret_key):

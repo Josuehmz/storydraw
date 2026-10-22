@@ -1,19 +1,15 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/flujo_cuento.dart';
 import '../../application/lienzo.dart';
-import '../../application/proveedores.dart';
 import '../../core/tema.dart';
 import '../../domain/entidades.dart';
-import '../../domain/repositorios.dart';
 import '../identificacion/pantalla_identificacion.dart';
 import '../widgets/comunes.dart';
 
 /// Visor del cuento: una página a la vez, con botones grandes (sin gestos de
-/// deslizar) y narración por página.
+/// deslizar). El cuento sale sin narración: se lee en pantalla.
 class PantallaCuento extends ConsumerStatefulWidget {
   const PantallaCuento({super.key, this.cuento, this.desdeFlujo = false})
     : assert(cuento != null || desdeFlujo);
@@ -28,40 +24,8 @@ class PantallaCuento extends ConsumerStatefulWidget {
 
 class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
   int _pagina = 0;
-  bool _sonando = false;
-  bool _reintentando = false;
-  StreamSubscription<bool>? _sub;
-  late final Reproductor _reproductor;
 
-  Cuento? get _cuento => widget.desdeFlujo ? ref.read(flujoProvider).cuento : widget.cuento;
-
-  @override
-  void initState() {
-    super.initState();
-    _reproductor = ref.read(reproductorProvider);
-    _sub = _reproductor.reproduciendo.listen((v) {
-      if (mounted) setState(() => _sonando = v);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _narrar());
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    unawaited(_reproductor.detener());
-    super.dispose();
-  }
-
-  Future<void> _narrar() async {
-    final audio = _cuento?.paginas.elementAtOrNull(_pagina)?.audio;
-    if (audio != null) await _reproductor.reproducir(audio);
-  }
-
-  Future<void> _irA(int pagina) async {
-    await _reproductor.detener();
-    setState(() => _pagina = pagina);
-    await _narrar();
-  }
+  void _irA(int pagina) => setState(() => _pagina = pagina);
 
   void _alInicio() {
     ref.read(flujoProvider.notifier).reiniciar();
@@ -74,14 +38,6 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
     Navigator.of(
       context,
     ).pushReplacement(MaterialPageRoute<void>(builder: (_) => const PantallaIdentificacion()));
-  }
-
-  Future<void> _reintentarVoz() async {
-    setState(() => _reintentando = true);
-    await ref.read(flujoProvider.notifier).reintentarNarracion();
-    if (!mounted) return;
-    setState(() => _reintentando = false);
-    await _narrar();
   }
 
   @override
@@ -118,15 +74,6 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                       style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                     ),
                   ),
-                  if (pagina.audio != null)
-                    BotonIcono(
-                      key: const Key('boton-narrar'),
-                      icono: _sonando ? Icons.stop : Icons.volume_up,
-                      etiqueta: _sonando ? 'Parar' : 'Escuchar',
-                      color: Colores.violeta,
-                      tamano: 64,
-                      alPulsar: _sonando ? () => _reproductor.detener() : _narrar,
-                    ),
                 ],
               ),
             ),
@@ -161,33 +108,10 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                     style: const TextStyle(fontSize: 22, height: 1.5, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
-                  if (cuento.sinNarracion)
-                    AvisoInfo(
-                      key: const Key('aviso-sin-voz'),
-                      texto: 'Este cuento llegó sin voz. Puedes pedirla otra vez.',
-                      accion: widget.desdeFlujo
-                          ? (_reintentando
-                                ? const SizedBox.square(
-                                    dimension: kToqueMinimo,
-                                    child: Center(child: CircularProgressIndicator()),
-                                  )
-                                : BotonIcono(
-                                    key: const Key('boton-reintentar-voz'),
-                                    icono: Icons.record_voice_over,
-                                    etiqueta: 'Pedir la voz otra vez',
-                                    color: Colores.azulInfo,
-                                    tamano: 64,
-                                    alPulsar: _reintentarVoz,
-                                  ))
-                          : null,
-                    ),
                   if (cuento.avisos.contains(Avisos.sinEscenarios))
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: AvisoInfo(
-                        key: Key('aviso-sin-escenarios'),
-                        texto: 'Algunos fondos son de nuestro banco de paisajes.',
-                      ),
+                    const AvisoInfo(
+                      key: Key('aviso-sin-escenarios'),
+                      texto: 'Algunos fondos son de nuestro banco de paisajes.',
                     ),
                   if (widget.desdeFlujo) ...[
                     const SizedBox(height: 12),

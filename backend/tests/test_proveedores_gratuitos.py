@@ -25,7 +25,6 @@ from app.infra.adaptadores.proveedor_cloudflare import (
     ImagenCloudflare,
     TextoCloudflare,
     VisionCloudflare,
-    VozCloudflare,
 )
 from app.infra.adaptadores.proveedor_ollama import ClienteOllama, TextoOllama, VisionOllama
 
@@ -83,6 +82,8 @@ async def test_texto_ollama_forma_del_pedido_y_parseo():
     assert str(req.url) == "http://host.docker.internal:11434/api/chat"
     assert cuerpo["model"] == "llama3.2:3b" and cuerpo["stream"] is False
     assert cuerpo["format"] == ESQUEMA_CUENTO["schema"]  # salida estructurada
+    paginas = cuerpo["format"]["properties"]["paginas"]
+    assert paginas["minItems"] == paginas["maxItems"] == 3  # exactamente 3 páginas
     assert "un dragón" in cuerpo["messages"][0]["content"]
     assert "8 años" in cuerpo["messages"][0]["content"]
     assert req.extensions["timeout"]["read"] == 900  # timeout propio, configurable
@@ -248,29 +249,6 @@ async def test_imagen_cloudflare_flux_base64_a_png_y_neuronas():
 
 
 @pytest.mark.anyio
-async def test_voz_cloudflare_melotts_json_en_espanol():
-    mp3 = b"ID3-audio-mp3"
-    peticiones, manejar = _grabador(_sobre({"audio": base64.b64encode(mp3).decode()}))
-    texto = "Había una vez un dragón." * 10
-    async with _http(manejar) as http:
-        voz = VozCloudflare(_cf(http), "@cf/myshell-ai/melotts", "es", 18.63)
-        res = await voz.narrar(texto)
-    cuerpo = json.loads(peticiones[0].content)
-    assert cuerpo == {"prompt": texto, "lang": "es"}
-    assert res.mp3 == mp3 and res.uso.caracteres == len(texto)
-    assert res.uso.neuronas == pytest.approx(len(texto) / 900 * 18.63)
-
-
-@pytest.mark.anyio
-async def test_voz_cloudflare_acepta_mp3_binario():
-    respuesta = httpx.Response(200, content=b"ID3-binario", headers={"content-type": "audio/mpeg"})
-    _, manejar = _grabador(respuesta)
-    async with _http(manejar) as http:
-        res = await VozCloudflare(_cf(http), "@cf/myshell-ai/melotts", "es", 18.63).narrar("Hola")
-    assert res.mp3 == b"ID3-binario"
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     "respuesta",
     [
@@ -322,7 +300,7 @@ async def test_cloudflare_timeout_se_propaga():
     _, manejar = _grabador(httpx.ConnectTimeout("sin red"))
     async with _http(manejar) as http:
         with pytest.raises(httpx.TimeoutException):
-            await VozCloudflare(_cf(http), "@cf/myshell-ai/melotts", "es", 18.63).narrar("Hola")
+            await TextoCloudflare(_cf(http), "m").escribir_cuento(SolicitudCuento("x", 7))
 
 
 # ------------------------------------------------------------------ Moderación con LLM
@@ -433,15 +411,14 @@ def test_orquestador_respeta_el_timeout_propio_del_adaptador(crear_entorno):
     assert cuento["estado"] == "listo"
 
 
-def test_perfil_local_ollama_sin_imagen_ni_voz_degrada(crear_entorno):
-    entorno = crear_entorno(proveedor_imagen="ninguno", proveedor_voz="ninguno")
+def test_perfil_local_ollama_sin_imagen_degrada(crear_entorno):
+    entorno = crear_entorno(proveedor_imagen="ninguno")
     cab = entorno.registrar("a@correo.com")
     perfil = entorno.crear_perfil(cab)
     cuento_id = entorno.crear_cuento(cab, perfil).json()["id"]
     cuento = entorno.cliente.get(f"/v1/cuentos/{cuento_id}", headers=cab).json()
     assert cuento["estado"] == "listo" and len(cuento["paginas"]) == 3
-    assert {"sin_escenarios", "sin_narracion"} <= set(cuento["avisos"])
-    assert all(p["audio_url"] is None for p in cuento["paginas"])
+    assert cuento["avisos"] == ["sin_escenarios"]
 
 
 def test_contenedor_arma_los_proveedores_gratuitos(crear_entorno):
@@ -464,7 +441,6 @@ def _base(**cambios) -> Settings:
         proveedor_texto="falso",
         proveedor_moderacion="falso",
         proveedor_imagen="falso",
-        proveedor_voz="falso",
         proveedor_correo="falso",
         almacen="memoria",
     )
@@ -479,8 +455,9 @@ def test_configuracion_de_proveedores_gratuitos():
         _base(proveedor_moderacion="openai")
     s = _base(proveedor_texto="cloudflare", cloudflare_account_id="c", cloudflare_api_token="t")
     assert s.cloudflare_modelo_imagen == "@cf/black-forest-labs/flux-1-schnell"
-    assert s.cloudflare_modelo_voz == "@cf/myshell-ai/melotts" and s.cloudflare_idioma_voz == "es"
-    assert _base(proveedor_texto="ollama").ollama_modelo_texto == "llama3.2:3b"
+    s = _base(proveedor_texto="ollama")
+    assert s.ollama_modelo_texto == s.ollama_modelo_vision == s.ollama_modelo_moderacion
+    assert s.ollama_modelo_texto == "gemma3:4b"
 
 
 def test_moderacion_llm_prohibida_en_produccion():
@@ -489,7 +466,6 @@ def test_moderacion_llm_prohibida_en_produccion():
         proveedor_vision="cloudflare",
         proveedor_texto="cloudflare",
         proveedor_imagen="cloudflare",
-        proveedor_voz="cloudflare",
         proveedor_correo="smtp",
         smtp_host="smtp.x",
         smtp_remitente="a@x",

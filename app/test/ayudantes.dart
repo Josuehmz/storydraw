@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -17,44 +16,24 @@ final pngMinimo = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 );
 
-Cuento cuentoDePrueba({String id = 'c1', List<String> avisos = const [], bool conAudio = true}) =>
-    Cuento(
-      id: id,
-      perfilId: 'p1',
-      estado: EstadoCuento.listo,
-      titulo: 'La aventura de un dragón $id',
-      personaje: 'un dragón',
-      avisos: avisos,
-      creadoEn: DateTime(2026, 10, 17),
-      paginas: [
-        for (var n = 1; n <= 3; n++)
-          Pagina(
-            numero: n,
-            texto: 'Texto de la página $n',
-            imagenUrl: '/v1/cuentos/$id/paginas/$n/imagen',
-            audioUrl: conAudio ? '/v1/cuentos/$id/paginas/$n/audio' : null,
-            imagen: pngMinimo,
-            audio: conAudio ? Uint8List.fromList([73, 68, 51, n]) : null,
-          ),
-      ],
-    );
-
-class ReproductorFalso implements Reproductor {
-  final reproducidos = <Uint8List>[];
-  final _estado = StreamController<bool>.broadcast();
-
-  @override
-  Stream<bool> get reproduciendo => _estado.stream;
-
-  @override
-  Future<void> reproducir(Uint8List mp3) async => reproducidos.add(mp3);
-
-  @override
-  Future<void> detener() async {}
-
-  @override
-  Future<void> liberar() => _estado.close();
-}
+Cuento cuentoDePrueba({String id = 'c1', List<String> avisos = const []}) => Cuento(
+  id: id,
+  perfilId: 'p1',
+  estado: EstadoCuento.listo,
+  titulo: 'La aventura de un dragón $id',
+  personaje: 'un dragón',
+  avisos: avisos,
+  creadoEn: DateTime(2026, 10, 17),
+  paginas: [
+    for (var n = 1; n <= 3; n++)
+      Pagina(
+        numero: n,
+        texto: 'Texto de la página $n',
+        imagenUrl: '/v1/cuentos/$id/paginas/$n/imagen',
+        imagen: pngMinimo,
+      ),
+  ],
+);
 
 class CuentosRepositorioFalso implements CuentosRepositorio {
   CuentosRepositorioFalso({List<Cuento>? cuentos}) : cuentos = cuentos ?? [];
@@ -80,9 +59,6 @@ class CuentosRepositorioFalso implements CuentosRepositorio {
   Future<Cuento> esperar(String cuentoId) async => cuentoDePrueba(id: cuentoId);
 
   @override
-  Future<Cuento> reintentarNarracion(String cuentoId) async => cuentoDePrueba(id: cuentoId);
-
-  @override
   Future<List<Cuento>> biblioteca(String perfilId) async => List.of(cuentos);
 
   @override
@@ -103,7 +79,6 @@ void usarTelefono(WidgetTester tester) {
 Future<Widget> montar(
   Widget hijo, {
   List<Override> overrides = const [],
-  Reproductor? reproductor,
   Map<String, Object> preferencias = const {
     'sesion.token': 'jwt-de-prueba',
     'sesion.perfil_id': 'p1',
@@ -115,11 +90,7 @@ Future<Widget> montar(
   final prefs = await SharedPreferences.getInstance();
   return ProviderScope(
     retry: (_, _) => null,
-    overrides: [
-      sesionLocalProvider.overrideWithValue(SesionLocal(prefs)),
-      reproductorProvider.overrideWithValue(reproductor ?? ReproductorFalso()),
-      ...overrides,
-    ],
+    overrides: [sesionLocalProvider.overrideWithValue(SesionLocal(prefs)), ...overrides],
     child: MaterialApp(home: hijo),
   );
 }

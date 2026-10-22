@@ -76,7 +76,6 @@ class PaginaSalida(BaseModel):
     numero: int
     texto: str
     imagen_url: str
-    audio_url: str | None
 
 
 class CuentoSalida(BaseModel):

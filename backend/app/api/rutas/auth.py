@@ -121,7 +121,7 @@ async def borrar_cuenta(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> Response:
-    """Borrado a petición de toda la cuenta: perfiles, cuentos, páginas y audio."""
+    """Borrado a petición de toda la cuenta: perfiles, cuentos, páginas e imágenes."""
     await borrar_cuentos(c, await repo.ids_cuentos(tutor_id=tutor.id))
     await repo.borrar_tutor(tutor.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

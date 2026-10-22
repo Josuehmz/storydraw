@@ -8,22 +8,21 @@ import 'package:storydraw/presentation/cuento/pantalla_cuento.dart';
 import '../ayudantes.dart';
 
 void main() {
-  testWidgets('el visor avanza y retrocede con botones y narra cada página', (tester) async {
+  testWidgets('el visor avanza y retrocede con botones y muestra el cuento sin audio', (
+    tester,
+  ) async {
     usarTelefono(tester);
-    final reproductor = ReproductorFalso();
-    await tester.pumpWidget(
-      await montar(PantallaCuento(cuento: cuentoDePrueba()), reproductor: reproductor),
-    );
+    await tester.pumpWidget(await montar(PantallaCuento(cuento: cuentoDePrueba())));
     await tester.pump();
 
     expect(find.text('Texto de la página 1'), findsOneWidget);
-    expect(find.byKey(const Key('aviso-sin-voz')), findsNothing);
-    expect(reproductor.reproducidos.length, 1);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byIcon(Icons.volume_up), findsNothing);
+    expect(find.byKey(const Key('aviso-sin-escenarios')), findsNothing);
 
     await tester.tap(find.byKey(const Key('boton-siguiente')));
     await tester.pump();
     expect(find.text('Texto de la página 2'), findsOneWidget);
-    expect(reproductor.reproducidos.last.last, 2);
 
     await tester.tap(find.byKey(const Key('boton-siguiente')));
     await tester.pump();
@@ -35,18 +34,15 @@ void main() {
     expect(find.text('Texto de la página 2'), findsOneWidget);
   });
 
-  testWidgets('sin narración, el aviso es informativo y no hay botón de audio', (tester) async {
+  testWidgets('sin escenarios, el aviso es informativo', (tester) async {
     usarTelefono(tester);
     await tester.pumpWidget(
-      await montar(
-        PantallaCuento(cuento: cuentoDePrueba(avisos: [Avisos.sinNarracion], conAudio: false)),
-      ),
+      await montar(PantallaCuento(cuento: cuentoDePrueba(avisos: [Avisos.sinEscenarios]))),
     );
     await tester.pump();
-    expect(find.byKey(const Key('aviso-sin-voz')), findsOneWidget);
+    expect(find.byKey(const Key('aviso-sin-escenarios')), findsOneWidget);
     expect(find.text('Información importante'), findsOneWidget);
     expect(find.byIcon(Icons.info_outline), findsOneWidget);
-    expect(find.byKey(const Key('boton-narrar')), findsNothing);
   });
 
   testWidgets('la biblioteca muestra los cuentos y borra a petición', (tester) async {

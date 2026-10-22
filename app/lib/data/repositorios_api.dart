@@ -131,13 +131,11 @@ class CuentosRepositorioApi implements CuentosRepositorio {
     return Uint8List.fromList(r.data!);
   }
 
-  /// Descarga las páginas y el audio y guarda el cuento en la caché.
+  /// Descarga las imágenes de las páginas y guarda el cuento en la caché.
   Future<Cuento> _descargar(Cuento cuento) async {
     final paginas = <Pagina>[];
     for (final p in cuento.paginas) {
-      final imagen = await _bytes(p.imagenUrl);
-      final audio = p.audioUrl != null ? await _bytes(p.audioUrl!) : null;
-      paginas.add(p.conMedios(imagen: imagen, audio: audio));
+      paginas.add(p.conMedios(imagen: await _bytes(p.imagenUrl)));
     }
     final completo = cuento.conPaginas(paginas);
     await _cache.guardar(completo);
@@ -156,12 +154,6 @@ class CuentosRepositorioApi implements CuentosRepositorio {
       }
       await Future<void>.delayed(_config.intervaloConsulta);
     }
-  });
-
-  @override
-  Future<Cuento> reintentarNarracion(String cuentoId) => _envolver(() async {
-    final r = await _dio.post<Map<String, dynamic>>('/v1/cuentos/$cuentoId/narracion');
-    return _descargar(Cuento.desdeJson(r.data!));
   });
 
   @override

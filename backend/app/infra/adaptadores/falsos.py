@@ -11,6 +11,7 @@ import io
 from PIL import Image, ImageDraw
 
 from app.dominio.puertos import (
+    AtributosDibujo,
     CuentoTexto,
     Hipotesis,
     ICorreo,
@@ -18,9 +19,7 @@ from app.dominio.puertos import (
     IModerador,
     ITexto,
     IVision,
-    IVoz,
     PaginaTexto,
-    ResultadoAudio,
     ResultadoImagen,
     ResultadoVision,
     SolicitudCuento,
@@ -44,12 +43,15 @@ class VisionFalsa(IVision):
             Hipotesis("un dinosaurio", 0.44),
             Hipotesis("un gato", 0.12),
         ]
+        self.atributos = AtributosDibujo(("verde",), ("cola larga", "alas"), "alegre")
 
     async def identificar(self, imagen_png: bytes) -> ResultadoVision:
         self.llamadas += 1
         if self.fallar:
             raise ProveedorCaido("visión caída")
-        return ResultadoVision(list(self.hipotesis), Uso(tokens_entrada=2048, tokens_salida=60))
+        return ResultadoVision(
+            list(self.hipotesis), Uso(tokens_entrada=2048, tokens_salida=60), self.atributos
+        )
 
 
 class TextoFalso(ITexto, IModerador):
@@ -65,9 +67,12 @@ class TextoFalso(ITexto, IModerador):
         self.palabras_marcadas = ("violencia", "monstruo malvado")
         self.llamadas_cuento = 0
         self.llamadas_moderacion = 0
+        self.solicitudes: list[SolicitudCuento] = []
+        self.textos_moderados: list[str] = []
 
     async def escribir_cuento(self, solicitud: SolicitudCuento) -> CuentoTexto:
         self.llamadas_cuento += 1
+        self.solicitudes.append(solicitud)
         if self.fallar:
             raise ProveedorCaido("texto caído")
         if self.fallos_pendientes > 0:
@@ -85,6 +90,7 @@ class TextoFalso(ITexto, IModerador):
 
     async def moderar(self, texto: str) -> VeredictoModeracion:
         self.llamadas_moderacion += 1
+        self.textos_moderados.append(texto)
         if self.fallar_moderacion:
             raise ProveedorCaido("moderación caída")
         bajo = texto.lower()
@@ -113,39 +119,15 @@ class ImagenFalsa(IImagen):
 class ImagenNoDisponible(IImagen):
     """`PROVEEDOR_IMAGEN=ninguno`: el proveedor no genera imágenes (p. ej. Ollama).
 
-    Falla al instante y el orquestador degrada a un fondo del banco, como si cayera.
+    El orquestador no la llama (`disponible = False`) y usa un fondo del banco. Si alguien
+    la llama igual, falla al instante.
     """
 
     proveedor = "ninguno"
+    disponible = False
 
     async def generar_fondo(self, descripcion: str) -> ResultadoImagen:
         raise ProveedorCaido("sin proveedor de imagen configurado")
-
-
-class VozNoDisponible(IVoz):
-    """`PROVEEDOR_VOZ=ninguno`: el cuento se entrega escrito, con el aviso de sin narración."""
-
-    proveedor = "ninguno"
-
-    async def narrar(self, texto: str) -> ResultadoAudio:
-        raise ProveedorCaido("sin proveedor de voz configurado")
-
-
-class VozFalsa(IVoz):
-    proveedor = "falso"
-
-    def __init__(self) -> None:
-        self.fallar = False
-        self.llamadas = 0
-
-    async def narrar(self, texto: str) -> ResultadoAudio:
-        self.llamadas += 1
-        if self.fallar:
-            raise ProveedorCaido("voz caída")
-        # Cabecera ID3 mínima: suficiente para probar el flujo, no es audio real.
-        return ResultadoAudio(
-            b"ID3\x04\x00\x00\x00\x00\x00\x00" + texto.encode()[:64], Uso(caracteres=len(texto))
-        )
 
 
 class CorreoFalso(ICorreo):

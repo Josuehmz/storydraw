@@ -2,8 +2,8 @@
 
 Ollama corre en el host y no cobra: el costo de cada llamada es 0. Por CPU va a pocos
 tokens por segundo, así que el timeout es propio (`OLLAMA_TIMEOUT_S`) y el orquestador lo
-respeta en vez del global. Ollama no genera imágenes ni voz: con `PROVEEDOR_IMAGEN=ninguno`
-y `PROVEEDOR_VOZ=ninguno` esos pasos se degradan (fondo del banco y cuento sin audio).
+respeta en vez del global. Ollama no genera imágenes: con `PROVEEDOR_IMAGEN=ninguno` el paso
+de escenarios usa un fondo del banco.
 """
 
 from __future__ import annotations
@@ -18,10 +18,11 @@ from app.infra.adaptadores.comun import (
     ESQUEMA_VISION,
     PROMPT_VISION,
     ErrorProveedor,
+    atributos_desde,
     cuento_desde,
     hipotesis_desde,
     leer_json,
-    mensaje_cuento,
+    mensaje_solicitud,
 )
 
 
@@ -98,9 +99,9 @@ class VisionOllama(IVision):
             "¿Qué dibujó el niño? Responde en JSON.",
             ESQUEMA_VISION,
             imagenes=[imagen_png],
-            max_tokens=200,
+            max_tokens=400,
         )
-        return ResultadoVision(hipotesis_desde(datos), uso)
+        return ResultadoVision(hipotesis_desde(datos), uso, atributos_desde(datos))
 
 
 class TextoOllama(ITexto):
@@ -115,7 +116,7 @@ class TextoOllama(ITexto):
     async def escribir_cuento(self, solicitud: SolicitudCuento):
         datos, uso = await self._cliente.chat_json(
             self._modelo,
-            mensaje_cuento(solicitud.personaje, solicitud.edad, solicitud.paginas),
+            mensaje_solicitud(solicitud),
             f"Protagonista: {solicitud.personaje}. Responde en JSON con «titulo» y «paginas».",
             ESQUEMA_CUENTO,
             max_tokens=self._max_tokens,

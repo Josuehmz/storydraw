@@ -5,7 +5,6 @@ import '../core/config.dart';
 import '../core/http.dart';
 import '../data/cache_cuentos.dart';
 import '../data/repositorios_api.dart';
-import '../data/reproductor_just_audio.dart';
 import '../data/sesion_local.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -43,12 +42,6 @@ final cuentosRepositorioProvider = Provider<CuentosRepositorio>(
     ref.watch(configProvider),
   ),
 );
-
-final reproductorProvider = Provider<Reproductor>((ref) {
-  final r = ReproductorJustAudio();
-  ref.onDispose(r.liberar);
-  return r;
-});
 
 // ------------------------------------------------------------------- sesión
 
