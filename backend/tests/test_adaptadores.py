@@ -6,14 +6,12 @@ from __future__ import annotations
 import base64
 import json
 
-import httpx
 import httpx2
 import pytest
 from openai import AsyncOpenAI
 
 from app.dominio.puertos import SolicitudCuento
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
-from app.infra.adaptadores.voz_elevenlabs import VozElevenLabs
 
 pytestmark = pytest.mark.anyio
 
@@ -115,20 +113,3 @@ async def test_imagen_openai():
     assert cuerpo["model"] == "gpt-image-1-mini"
     assert cuerpo["quality"] == "low" and cuerpo["size"] == "1024x1024"
     assert res.png == b"\x89PNG-falso" and res.uso.imagenes == 1
-
-
-async def test_voz_elevenlabs():
-    peticiones: list = []
-
-    def manejar(request: httpx.Request) -> httpx.Response:
-        peticiones.append(request)
-        return httpx.Response(200, content=b"ID3audio")
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(manejar)) as http:
-        voz = VozElevenLabs(http, "clave-de-prueba", "voz123", "eleven_flash_v2_5")
-        res = await voz.narrar("Hola")
-    req = peticiones[0]
-    assert req.url.path == "/v1/text-to-speech/voz123"
-    assert req.headers["xi-api-key"] == "clave-de-prueba"
-    assert json.loads(req.content)["model_id"] == "eleven_flash_v2_5"
-    assert res.mp3 == b"ID3audio" and res.uso.caracteres == 4

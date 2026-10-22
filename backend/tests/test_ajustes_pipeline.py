@@ -109,22 +109,18 @@ def _pasos(entorno, admin, cuento_id):
     return {p["paso"]: p for p in next(f for f in filas if f["id"] == cuento_id)["pasos"]}
 
 
-def test_imagen_y_voz_apagadas_no_se_llaman_ni_reintentan(crear_entorno):
-    entorno = crear_entorno(proveedor_imagen="ninguno", proveedor_voz="ninguno")
+def test_imagen_apagada_no_se_llama_ni_reintenta(crear_entorno):
+    entorno = crear_entorno(proveedor_imagen="ninguno")
     cab = entorno.registrar("a@correo.com")
     admin = entorno.registrar("admin@storydraw.com")
     perfil = entorno.crear_perfil(cab)
     cuento_id = entorno.crear_cuento(cab, perfil).json()["id"]
     cuento = entorno.cliente.get(f"/v1/cuentos/{cuento_id}", headers=cab).json()
     assert cuento["estado"] == "listo" and len(cuento["paginas"]) == 3
-    assert {"sin_escenarios", "sin_narracion"} <= set(cuento["avisos"])
+    assert cuento["avisos"] == ["sin_escenarios"]
     pasos = _pasos(entorno, admin, cuento_id)
-    for paso in ("escenarios", "narrar"):
-        assert pasos[paso]["estado"] == "omitido" and pasos[paso]["intentos"] == 0
-        assert pasos[paso]["proveedor"] == "ninguno"
-    # Pedir de nuevo la narración tampoco llama a nada
-    r = entorno.cliente.post(f"/v1/cuentos/{cuento_id}/narracion", headers=cab)
-    assert r.status_code == 200 and "sin_narracion" in r.json()["avisos"]
+    assert pasos["escenarios"]["estado"] == "omitido" and pasos["escenarios"]["intentos"] == 0
+    assert pasos["escenarios"]["proveedor"] == "ninguno"
 
 
 # ------------------------------------------------------------------ 3c · exactamente 3 páginas

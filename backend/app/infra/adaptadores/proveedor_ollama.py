@@ -2,8 +2,8 @@
 
 Ollama corre en el host y no cobra: el costo de cada llamada es 0. Por CPU va a pocos
 tokens por segundo, así que el timeout es propio (`OLLAMA_TIMEOUT_S`) y el orquestador lo
-respeta en vez del global. Ollama no genera imágenes ni voz: con `PROVEEDOR_IMAGEN=ninguno`
-y `PROVEEDOR_VOZ=ninguno` esos pasos se degradan (fondo del banco y cuento sin audio).
+respeta en vez del global. Ollama no genera imágenes: con `PROVEEDOR_IMAGEN=ninguno` el paso
+de escenarios usa un fondo del banco.
 """
 
 from __future__ import annotations

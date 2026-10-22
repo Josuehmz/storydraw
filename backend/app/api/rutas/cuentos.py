@@ -23,7 +23,7 @@ from app.dominio.composicion import DibujoInvalido, abrir_dibujo
 from app.infra.adaptadores.almacen import ObjetoNoEncontrado
 from app.infra.orm import Tutor
 from app.infra.repositorio import Repositorio
-from app.servicios import a_salida, borrar_cuentos, procesar_cuento, reintentar_narracion
+from app.servicios import a_salida, borrar_cuentos, procesar_cuento
 
 router = APIRouter(prefix="/v1", tags=["cuentos"])
 
@@ -101,41 +101,6 @@ async def consultar(
     return a_salida(await _cuento_o_404(repo, tutor, cuento_id))
 
 
-@router.post("/cuentos/{cuento_id}/narracion", response_model=CuentoSalida)
-@limites.limiter.limit(limites.limite_identificar, key_func=limites.clave_cuenta)
-async def reintentar_voz(
-    request: Request,
-    cuento_id: uuid.UUID,
-    tutor: Tutor = Depends(tutor_con_consentimiento),
-    c: Contenedor = Depends(contenedor),
-    repo: Repositorio = Depends(repositorio),
-) -> CuentoSalida:
-    """Reintenta solo la narración que faltó; no rehace el cuento."""
-    cuento = await _cuento_o_404(repo, tutor, cuento_id)
-    if cuento.estado != "listo":
-        raise HTTPException(status.HTTP_409_CONFLICT, "cuento_no_listo")
-    return a_salida(await reintentar_narracion(c, repo, cuento))
-
-
-async def _medio(c, repo, tutor, cuento_id, numero, tipo):
-    cuento = await _cuento_o_404(repo, tutor, cuento_id)
-    pagina = next((p for p in cuento.paginas if p.numero == numero), None)
-    if cuento.estado != "listo" or pagina is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "pagina_inexistente")
-    clave = pagina.imagen_clave if tipo == "imagen" else pagina.audio_clave
-    if not clave:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "sin_audio")
-    try:
-        datos = await c.almacen.leer(clave)
-    except ObjetoNoEncontrado as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "objeto_inexistente") from exc
-    return Response(
-        datos,
-        media_type="image/png" if tipo == "imagen" else "audio/mpeg",
-        headers={"Cache-Control": "private, max-age=86400"},
-    )
-
-
 @router.get("/cuentos/{cuento_id}/paginas/{numero}/imagen", response_class=Response)
 async def imagen(
     cuento_id: uuid.UUID,
@@ -144,18 +109,17 @@ async def imagen(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> Response:
-    return await _medio(c, repo, tutor, cuento_id, numero, "imagen")
-
-
-@router.get("/cuentos/{cuento_id}/paginas/{numero}/audio", response_class=Response)
-async def audio(
-    cuento_id: uuid.UUID,
-    numero: int,
-    tutor: Tutor = Depends(tutor_con_consentimiento),
-    c: Contenedor = Depends(contenedor),
-    repo: Repositorio = Depends(repositorio),
-) -> Response:
-    return await _medio(c, repo, tutor, cuento_id, numero, "audio")
+    cuento = await _cuento_o_404(repo, tutor, cuento_id)
+    pagina = next((p for p in cuento.paginas if p.numero == numero), None)
+    if cuento.estado != "listo" or pagina is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "pagina_inexistente")
+    try:
+        datos = await c.almacen.leer(pagina.imagen_clave)
+    except ObjetoNoEncontrado as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "objeto_inexistente") from exc
+    return Response(
+        datos, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"}
+    )
 
 
 @router.delete("/cuentos/{cuento_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -165,7 +129,7 @@ async def borrar(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> Response:
-    """Borrado a petición: filas, páginas, audio y el texto del registro de moderación."""
+    """Borrado a petición: filas, páginas, imágenes y el texto del registro de moderación."""
     cuento = await _cuento_o_404(repo, tutor, cuento_id)
     await borrar_cuentos(c, [cuento.id])
     await repo.borrar_cuento(cuento.id)

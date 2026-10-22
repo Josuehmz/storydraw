@@ -46,7 +46,7 @@ def create_app(settings: Settings | None = None, contenedor: Contenedor | None =
     app = FastAPI(
         title="StoryDraw API",
         version="0.1.0",
-        description="Del dibujo de un niño a un cuento ilustrado y narrado.",
+        description="Del dibujo de un niño a un cuento ilustrado.",
         lifespan=ciclo_de_vida,
         docs_url=None if settings.entorno == "produccion" else "/docs",
         redoc_url=None,
@@ -83,7 +83,6 @@ def create_app(settings: Settings | None = None, contenedor: Contenedor | None =
                 "texto": c.texto.proveedor,
                 "moderacion": c.moderador.proveedor,
                 "imagen": c.imagen.proveedor,
-                "voz": c.voz.proveedor,
                 "correo": c.correo.proveedor,
             },
         }

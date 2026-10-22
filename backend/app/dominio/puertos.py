@@ -18,7 +18,6 @@ class Uso:
     tokens_entrada: int = 0
     tokens_salida: int = 0
     imagenes: int = 0
-    caracteres: int = 0
     # Workers AI factura en neuronas; se guardan para auditar el costo.
     neuronas: float = 0.0
     # Si el adaptador ya calculó su costo (Ollama = 0, Cloudflare = neuronas a USD),
@@ -102,12 +101,6 @@ class ResultadoImagen:
     uso: Uso = field(default_factory=Uso)
 
 
-@dataclass(frozen=True)
-class ResultadoAudio:
-    mp3: bytes
-    uso: Uso = field(default_factory=Uso)
-
-
 class IVision(ABC):
     proveedor: str = "desconocido"
     # Timeout propio del adaptador (p. ej. Ollama por CPU tarda minutos). None = el global.
@@ -147,17 +140,6 @@ class IImagen(ABC):
     @abstractmethod
     async def generar_fondo(self, descripcion: str) -> ResultadoImagen:
         """Genera un fondo sin personajes (PNG) para una página."""
-
-
-class IVoz(ABC):
-    proveedor: str = "desconocido"
-    timeout_s: float | None = None
-    # False = capacidad apagada (`PROVEEDOR_VOZ=ninguno`): el orquestador ni la llama.
-    disponible: bool = True
-
-    @abstractmethod
-    async def narrar(self, texto: str) -> ResultadoAudio:
-        """Sintetiza la narración de una página (MP3)."""
 
 
 class ICorreo(ABC):

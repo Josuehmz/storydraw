@@ -97,7 +97,6 @@ def _base(**cambios):
         proveedor_texto="falso",
         proveedor_moderacion="falso",
         proveedor_imagen="falso",
-        proveedor_voz="falso",
         proveedor_correo="falso",
         almacen="memoria",
     )
@@ -108,8 +107,6 @@ def _base(**cambios):
 def test_configuracion_falla_al_arrancar_si_falta_algo():
     with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
         _base(proveedor_texto="openai")
-    with pytest.raises(ValidationError, match="ELEVENLABS"):
-        _base(proveedor_voz="elevenlabs")
     with pytest.raises(ValidationError, match="falsos"):
         _base(entorno="produccion")
     with pytest.raises(ValidationError):
@@ -121,4 +118,3 @@ def test_valores_por_defecto_de_los_modelos():
     assert s.openai_modelo_imagen == "gpt-image-1-mini"
     assert s.openai_calidad_imagen == "low" and s.openai_tamano_imagen == "1024x1024"
     assert s.openai_modelo_moderacion == "omni-moderation-latest"
-    assert s.elevenlabs_modelo == "eleven_flash_v2_5"

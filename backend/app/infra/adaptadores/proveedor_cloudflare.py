@@ -1,4 +1,4 @@
-"""Adaptadores de Cloudflare Workers AI (REST): visión, texto, imagen y voz.
+"""Adaptadores de Cloudflare Workers AI (REST): visión, texto e imagen.
 
 `POST https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{modelo}`
 con `Authorization: Bearer {CLOUDFLARE_API_TOKEN}`. La respuesta viene envuelta en
@@ -23,8 +23,6 @@ from app.dominio.puertos import (
     IImagen,
     ITexto,
     IVision,
-    IVoz,
-    ResultadoAudio,
     ResultadoImagen,
     ResultadoVision,
     SolicitudCuento,
@@ -44,9 +42,6 @@ from app.infra.adaptadores.comun import (
 )
 
 URL_BASE = "https://api.cloudflare.com/client/v4/accounts/{cuenta}/ai/run/{modelo}"
-
-# MeloTTS cobra por minuto de audio. Se estima con ~15 caracteres por segundo de habla.
-CARACTERES_POR_MINUTO = 900
 
 
 class ClienteCloudflare:
@@ -250,37 +245,3 @@ class ImagenCloudflare(IImagen):
         neuronas = teselas * self._neuronas_tesela + self._pasos * self._neuronas_paso
         uso = Uso(imagenes=1, neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
         return ResultadoImagen(salida.getvalue(), uso)
-
-
-class VozCloudflare(IVoz):
-    """MeloTTS: `{"prompt", "lang"}` -> `{"audio": base64 MP3}` (o el MP3 binario)."""
-
-    proveedor = "cloudflare"
-
-    def __init__(
-        self, cliente: ClienteCloudflare, modelo: str, idioma: str, neuronas_minuto: float
-    ):
-        self._cliente = cliente
-        self._modelo = modelo
-        self._idioma = idioma
-        self._neuronas_minuto = neuronas_minuto
-        self.timeout_s = cliente.timeout_s
-
-    async def narrar(self, texto: str) -> ResultadoAudio:
-        cuerpo = {"prompt": texto, "lang": self._idioma}
-        respuesta = await self._cliente.run(self._modelo, cuerpo)
-        if respuesta.headers.get("content-type", "").startswith("audio/"):
-            mp3 = respuesta.content
-        else:
-            try:
-                sobre = respuesta.json()
-            except ValueError as exc:
-                raise ErrorProveedor("Cloudflare devolvió una respuesta que no es JSON") from exc
-            if not sobre.get("success", False):
-                raise ErrorProveedor(f"Cloudflare sin éxito: {_errores(respuesta)}")
-            mp3 = _b64((sobre.get("result") or {}).get("audio"), "el audio")
-        if not mp3:
-            raise ErrorProveedor("Cloudflare devolvió un audio vacío")
-        neuronas = len(texto) / CARACTERES_POR_MINUTO * self._neuronas_minuto
-        uso = Uso(caracteres=len(texto), neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
-        return ResultadoAudio(mp3, uso)
