@@ -243,6 +243,8 @@ async def test_imagen_cloudflare_flux_base64_a_png_y_neuronas():
     assert req.url.path == _ruta(modelo)
     assert cuerpo["steps"] == 4 and "a quiet beach at sunset" in cuerpo["prompt"]
     assert set(cuerpo) == {"prompt", "steps"}  # el esquema de flux no admite más campos
+    assert "colored pencil" in cuerpo["prompt"].lower()
+    assert "not photorealistic" in cuerpo["prompt"]
     assert res.png.startswith(b"\x89PNG")  # el puerto promete PNG
     assert res.uso.neuronas == pytest.approx(4 * 4.80 + 4 * 9.60)  # 4 teselas + 4 pasos
     assert res.uso.costo_usd == pytest.approx(57.6 / 1000 * 0.011)
