@@ -11,6 +11,7 @@ import pytest
 from openai import AsyncOpenAI
 
 from app.dominio.puertos import SolicitudCuento
+from app.infra.adaptadores.comun import mensaje_solicitud, prompt_fondo
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
 
 pytestmark = pytest.mark.anyio
@@ -112,4 +113,20 @@ async def test_imagen_openai():
     assert ruta.endswith("/images/generations")
     assert cuerpo["model"] == "gpt-image-1-mini"
     assert cuerpo["quality"] == "low" and cuerpo["size"] == "1024x1024"
+    assert cuerpo["prompt"] == prompt_fondo("sea")  # sin copia propia del prompt
     assert res.png == b"\x89PNG-falso" and res.uso.imagenes == 1
+
+
+def test_prompt_fondo_estilo_lapices_de_colores():
+    prompt = prompt_fondo("a quiet river in a forest")
+    assert "colored pencil" in prompt.lower() and "crayon" in prompt.lower()
+    assert "not photorealistic" in prompt and "not 3D" in prompt
+    assert "Scene: a quiet river in a forest." in prompt
+    assert "no people" in prompt and "no animals" in prompt and "no text" in prompt
+
+
+def test_regla_de_escenas_solo_paisaje_y_estilo_coherente():
+    mensaje = mensaje_solicitud(SolicitudCuento("un perro", 7))
+    assert "sin personajes, personas, animales ni texto" in mensaje
+    assert "casas, jardines con cercas, calles o parques infantiles" in mensaje
+    assert "misma paleta de colores entre páginas" in mensaje
