@@ -1,0 +1,72 @@
+# Entorno local completo: API + PostgreSQL 16 + MinIO (S3) + Mailpit (SMTP de pruebas).
+#   cp .env.example .env   # y rellena los valores
+#   docker compose up --build
+name: storydraw
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Define POSTGRES_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-storydraw}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?Define S3_ACCESS_KEY en .env}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?Define S3_SECRET_KEY en .env}
+    volumes:
+      - minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-storydraw}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_CIFRADO_SSE: ${S3_CIFRADO_SSE:-false}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PUERTO: ${SMTP_PUERTO:-1025}
+      SMTP_SEGURIDAD: ${SMTP_SEGURIDAD:-ninguna}
+      SMTP_REMITENTE: ${SMTP_REMITENTE:-StoryDraw <no-responder@storydraw.local>}
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - u2net:/app/.u2net
+
+volumes:
+  pgdata:
+  minio:
+  u2net:
