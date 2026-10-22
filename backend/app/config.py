@@ -98,11 +98,12 @@ class Settings(BaseSettings):
     cloudflare_neuronas_imagen_paso: float = 9.60
     cloudflare_neuronas_voz_minuto: float = 18.63
 
-    # Ollama (prueba local, gratis, por CPU): solo texto y visión
+    # Ollama (prueba local, gratis, por CPU): texto, visión y moderación de desarrollo.
+    # gemma3:4b ve imágenes, así que un solo modelo cubre las tres capacidades.
     ollama_url: str = "http://localhost:11434"
-    ollama_modelo_texto: str = "llama3.2:3b"
-    ollama_modelo_vision: str = "qwen2.5vl:3b"
-    ollama_modelo_moderacion: str = "llama3.2:3b"
+    ollama_modelo_texto: str = "gemma3:4b"
+    ollama_modelo_vision: str = "gemma3:4b"
+    ollama_modelo_moderacion: str = "gemma3:4b"
     ollama_timeout_s: float = 900.0
 
     # Correo transaccional

@@ -10,7 +10,14 @@ import json
 import re
 from typing import Protocol
 
-from app.dominio.puertos import CuentoTexto, Hipotesis, PaginaTexto, Uso
+from app.dominio.puertos import (
+    AtributosDibujo,
+    CuentoTexto,
+    Hipotesis,
+    PaginaTexto,
+    SolicitudCuento,
+    Uso,
+)
 
 
 class ErrorProveedor(RuntimeError):
@@ -56,11 +63,24 @@ ESQUEMA_VISION = {
                     },
                     "required": ["etiqueta", "confianza"],
                 },
-            }
+            },
+            # Rasgos visibles del dibujo: el cuento los usa para no inventar otros.
+            "atributos": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "colores": {"type": "array", "items": {"type": "string"}},
+                    "elementos": {"type": "array", "items": {"type": "string"}},
+                    "emocion": {"type": "string"},
+                },
+                "required": ["colores", "elementos", "emocion"],
+            },
         },
-        "required": ["hipotesis"],
+        "required": ["hipotesis", "atributos"],
     },
 }
+
+PAGINAS_CUENTO = 3
 
 ESQUEMA_CUENTO = {
     "name": "cuento_infantil",
@@ -72,6 +92,10 @@ ESQUEMA_CUENTO = {
             "titulo": {"type": "string"},
             "paginas": {
                 "type": "array",
+                # Exactamente 3: con Ollama el esquema se vuelve gramática y el modelo no
+                # puede cerrar el arreglo antes; el dominio lo valida igual por si acaso.
+                "minItems": PAGINAS_CUENTO,
+                "maxItems": PAGINAS_CUENTO,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -92,7 +116,11 @@ PROMPT_VISION = (
     "Di qué personaje u objeto principal dibujó el niño. Devuelve de 2 a 4 hipótesis "
     "distintas, en español, de 1 a 3 palabras cada una (por ejemplo «un perro», «un "
     "dragón»), con una confianza entre 0 y 1. Sé generoso: es un dibujo infantil, no "
-    "una foto. Nunca describas a personas reales ni datos personales."
+    "una foto. Nunca describas a personas reales ni datos personales.\n"
+    "En «atributos» describe solo lo que se ve en el dibujo, en español y en minúsculas: "
+    "«colores» (de 1 a 4 colores principales del personaje), «elementos» (de 0 a 5 partes "
+    "o cosas visibles, como «cola larga», «alas», «sol») y «emocion» (una palabra, como "
+    "«alegre»). No inventes nada que no esté dibujado."
 )
 
 PROMPT_CUENTO = (
@@ -105,7 +133,16 @@ PROMPT_CUENTO = (
     "3. Nada de violencia, miedo intenso, armas, sustancias, romance ni marcas comerciales.\n"
     "4. El protagonista no cambia de forma ni de nombre.\n"
     "5. En «escena», describe en inglés solo el fondo de esa página (lugar, luz, colores), "
-    "sin personajes ni texto, en estilo ilustración infantil."
+    "sin personajes ni texto, en estilo ilustración infantil.\n"
+    "6. {rasgos}"
+)
+
+_RASGOS_CONOCIDOS = (
+    "Así es el protagonista en el dibujo ({atributos}). Descríbelo solo con esos rasgos: "
+    "no inventes otros colores, pelaje, ropa ni partes que no estén en el dibujo."
+)
+_RASGOS_DESCONOCIDOS = (
+    "No conoces los colores ni los rasgos del dibujo: no los describas ni los inventes."
 )
 
 
@@ -141,8 +178,20 @@ def prompt_fondo(descripcion: str) -> str:
     )
 
 
-def mensaje_cuento(personaje: str, edad: int, paginas: int) -> str:
-    return PROMPT_CUENTO.format(edad=edad, personaje=personaje, paginas=paginas)
+def mensaje_cuento(
+    personaje: str, edad: int, paginas: int, atributos: AtributosDibujo | None = None
+) -> str:
+    if atributos is not None and not atributos.vacio:
+        rasgos = _RASGOS_CONOCIDOS.format(atributos=atributos.como_texto())
+    else:
+        rasgos = _RASGOS_DESCONOCIDOS
+    return PROMPT_CUENTO.format(edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos)
+
+
+def mensaje_solicitud(solicitud: SolicitudCuento) -> str:
+    return mensaje_cuento(
+        solicitud.personaje, solicitud.edad, solicitud.paginas, solicitud.atributos
+    )
 
 
 def leer_json(contenido: object) -> dict:
@@ -174,6 +223,26 @@ def hipotesis_desde(datos: dict) -> list[Hipotesis]:
         for h in datos.get("hipotesis", [])
         if isinstance(h, dict) and "etiqueta" in h and "confianza" in h
     ]
+
+
+def _textos(valor: object, maximo: int) -> tuple[str, ...]:
+    if not isinstance(valor, list):
+        return ()
+    limpios = [str(v).strip()[:30] for v in valor if isinstance(v, str | int | float)]
+    return tuple(dict.fromkeys(v for v in limpios if v))[:maximo]
+
+
+def atributos_desde(datos: dict) -> AtributosDibujo:
+    """Lee los rasgos del dibujo con topes de cantidad y largo. Si faltan, quedan vacíos."""
+    crudos = datos.get("atributos")
+    if not isinstance(crudos, dict):
+        return AtributosDibujo()
+    emocion = crudos.get("emocion")
+    return AtributosDibujo(
+        colores=_textos(crudos.get("colores"), 4),
+        elementos=_textos(crudos.get("elementos"), 5),
+        emocion=emocion.strip()[:30] if isinstance(emocion, str) else "",
+    )
 
 
 def cuento_desde(datos: dict, uso: Uso) -> CuentoTexto:

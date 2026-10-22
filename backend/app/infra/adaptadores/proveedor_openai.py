@@ -26,8 +26,8 @@ from app.dominio.puertos import (
 )
 from app.infra.adaptadores.comun import ESQUEMA_CUENTO as _ESQUEMA_CUENTO
 from app.infra.adaptadores.comun import ESQUEMA_VISION as _ESQUEMA_VISION
-from app.infra.adaptadores.comun import PROMPT_CUENTO as _PROMPT_CUENTO
 from app.infra.adaptadores.comun import PROMPT_VISION as _PROMPT_VISION
+from app.infra.adaptadores.comun import atributos_desde, mensaje_solicitud
 
 
 def _uso_chat(respuesta) -> Uso:
@@ -68,7 +68,7 @@ class VisionOpenAI(_BaseOpenAI, IVision):
         hipotesis = [
             Hipotesis(str(h["etiqueta"]), float(h["confianza"])) for h in datos.get("hipotesis", [])
         ]
-        return ResultadoVision(hipotesis, _uso_chat(respuesta))
+        return ResultadoVision(hipotesis, _uso_chat(respuesta), atributos_desde(datos))
 
 
 class TextoOpenAI(_BaseOpenAI, ITexto, IModerador):
@@ -82,11 +82,7 @@ class TextoOpenAI(_BaseOpenAI, ITexto, IModerador):
             messages=[
                 {
                     "role": "system",
-                    "content": _PROMPT_CUENTO.format(
-                        edad=solicitud.edad,
-                        personaje=solicitud.personaje,
-                        paginas=solicitud.paginas,
-                    ),
+                    "content": mensaje_solicitud(solicitud),
                 },
                 {"role": "user", "content": f"Protagonista: {solicitud.personaje}"},
             ],

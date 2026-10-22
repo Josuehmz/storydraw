@@ -83,6 +83,8 @@ async def test_texto_ollama_forma_del_pedido_y_parseo():
     assert str(req.url) == "http://host.docker.internal:11434/api/chat"
     assert cuerpo["model"] == "llama3.2:3b" and cuerpo["stream"] is False
     assert cuerpo["format"] == ESQUEMA_CUENTO["schema"]  # salida estructurada
+    paginas = cuerpo["format"]["properties"]["paginas"]
+    assert paginas["minItems"] == paginas["maxItems"] == 3  # exactamente 3 páginas
     assert "un dragón" in cuerpo["messages"][0]["content"]
     assert "8 años" in cuerpo["messages"][0]["content"]
     assert req.extensions["timeout"]["read"] == 900  # timeout propio, configurable
@@ -480,7 +482,9 @@ def test_configuracion_de_proveedores_gratuitos():
     s = _base(proveedor_texto="cloudflare", cloudflare_account_id="c", cloudflare_api_token="t")
     assert s.cloudflare_modelo_imagen == "@cf/black-forest-labs/flux-1-schnell"
     assert s.cloudflare_modelo_voz == "@cf/myshell-ai/melotts" and s.cloudflare_idioma_voz == "es"
-    assert _base(proveedor_texto="ollama").ollama_modelo_texto == "llama3.2:3b"
+    s = _base(proveedor_texto="ollama")
+    assert s.ollama_modelo_texto == s.ollama_modelo_vision == s.ollama_modelo_moderacion
+    assert s.ollama_modelo_texto == "gemma3:4b"
 
 
 def test_moderacion_llm_prohibida_en_produccion():

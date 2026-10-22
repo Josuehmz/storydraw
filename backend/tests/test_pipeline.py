@@ -92,7 +92,8 @@ def test_pipeline_completo(entorno):
 
     pasos, fila = _pasos(entorno, admin, cuento_id)
     assert list(pasos) == ["identificar", "escribir", "moderar", "escenarios", "narrar"]
-    assert pasos["identificar"]["estado"] == "omitido"  # el niño ya dijo qué dibujó
+    # El niño ya dijo qué dibujó, pero la visión igual lee los rasgos del dibujo
+    assert pasos["identificar"]["estado"] == "ok"
     assert all(pasos[p]["estado"] == "ok" for p in ("escribir", "moderar", "escenarios", "narrar"))
     assert fila["latencia_ms"] is not None
     # 800/700 tokens de texto + 3 imágenes + caracteres narrados

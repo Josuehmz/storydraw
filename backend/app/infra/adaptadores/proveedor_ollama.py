@@ -18,10 +18,11 @@ from app.infra.adaptadores.comun import (
     ESQUEMA_VISION,
     PROMPT_VISION,
     ErrorProveedor,
+    atributos_desde,
     cuento_desde,
     hipotesis_desde,
     leer_json,
-    mensaje_cuento,
+    mensaje_solicitud,
 )
 
 
@@ -98,9 +99,9 @@ class VisionOllama(IVision):
             "¿Qué dibujó el niño? Responde en JSON.",
             ESQUEMA_VISION,
             imagenes=[imagen_png],
-            max_tokens=200,
+            max_tokens=400,
         )
-        return ResultadoVision(hipotesis_desde(datos), uso)
+        return ResultadoVision(hipotesis_desde(datos), uso, atributos_desde(datos))
 
 
 class TextoOllama(ITexto):
@@ -115,7 +116,7 @@ class TextoOllama(ITexto):
     async def escribir_cuento(self, solicitud: SolicitudCuento):
         datos, uso = await self._cliente.chat_json(
             self._modelo,
-            mensaje_cuento(solicitud.personaje, solicitud.edad, solicitud.paginas),
+            mensaje_solicitud(solicitud),
             f"Protagonista: {solicitud.personaje}. Responde en JSON con «titulo» y «paginas».",
             ESQUEMA_CUENTO,
             max_tokens=self._max_tokens,

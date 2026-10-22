@@ -5,8 +5,12 @@ Pasos: 1 identificar (visión, opcional) · 2 escribir (texto) · 3 moderar (obl
 sube al almacén.
 
 - Cada paso se reintenta por separado; un fallo no rehace el cuento entero.
-- Sin visión, se usa lo que el niño escribió (o un personaje genérico).
+- La visión da el personaje (si el niño no lo dijo) y los rasgos del dibujo (colores,
+  elementos, emoción), que viajan al paso del cuento para que no invente otros.
+- Sin visión, se usa lo que el niño escribió (o un personaje genérico) y no hay rasgos.
+- Un cuento con menos de 3 páginas no se entrega: cuenta como intento fallido del paso.
 - Sin imagen, se usa un fondo del banco. Sin voz, el cuento se entrega escrito con aviso.
+- Una capacidad apagada (`PROVEEDOR_*=ninguno`) no se llama ni se reintenta.
 - Sin cuento o sin moderación aprobada, no hay nada que mostrar: el niño no ve nada.
 """
 
@@ -23,6 +27,7 @@ from app.dominio.composicion import Compositor, fondo_del_banco
 from app.dominio.costos import Capacidad, Tarifario
 from app.dominio.moderacion import Moderacion
 from app.dominio.puertos import (
+    AtributosDibujo,
     CuentoTexto,
     Hipotesis,
     IAlmacen,
@@ -42,7 +47,13 @@ AVISO_SIN_ESCENARIOS = "sin_escenarios"
 AVISO_SIN_NARRACION = "sin_narracion"
 AVISO_SIN_IDENTIFICACION = "sin_identificacion"
 
+PAGINAS = 3
+
 Estado = Literal["listo", "rechazado", "fallido"]
+
+
+class CuentoIncompleto(ValueError):
+    """El modelo devolvió menos páginas de las pedidas: se reintenta, no se entrega."""
 
 
 class FalloPaso(Exception):
@@ -92,6 +103,7 @@ class ResultadoIdentificacion:
     disponible: bool
     hipotesis: list[Hipotesis]
     metrica: MetricaPaso
+    atributos: AtributosDibujo = field(default_factory=AtributosDibujo)
 
 
 @dataclass
@@ -212,7 +224,21 @@ class Orquestador:
         ]
         # Lo que propone la visión también se modera antes de mostrárselo al niño.
         hipotesis = [h for h in hipotesis if self.moderacion.revisar_local(h.etiqueta).aprobado]
-        return ResultadoIdentificacion(bool(hipotesis), hipotesis, metrica)
+        return ResultadoIdentificacion(
+            bool(hipotesis), hipotesis, metrica, self._filtrar_atributos(res.atributos)
+        )
+
+    def _filtrar_atributos(self, atributos: AtributosDibujo) -> AtributosDibujo:
+        """Los rasgos van al prompt del cuento: pasan el filtro local como las hipótesis."""
+
+        def ok(texto: str) -> bool:
+            return bool(texto) and self.moderacion.revisar_local(texto).aprobado
+
+        return AtributosDibujo(
+            colores=tuple(c for c in atributos.colores if ok(c)),
+            elementos=tuple(e for e in atributos.elementos if ok(e)),
+            emocion=atributos.emocion if ok(atributos.emocion) else "",
+        )
 
     # ---------------------------------------------------------------- pipeline
 
@@ -238,39 +264,42 @@ class Orquestador:
         # Recorte en un hilo: es CPU y no debe bloquear el bucle de eventos.
         recorte_tarea = asyncio.create_task(asyncio.to_thread(self.compositor.recortar, dibujo_png))
 
-        # Paso 1 · identificar (opcional: si el niño ya eligió o escribió, se omite)
+        # Paso 1 · identificar. Aunque el niño ya dijo qué dibujó, la visión lee los rasgos
+        # del dibujo (colores, elementos, emoción) para que el cuento no invente otros.
         personaje = (personaje or "").strip()[:120]
-        if personaje:
-            resultado.pasos.append(MetricaPaso("identificar", self.vision.proveedor, "omitido"))
-        else:
-            ident = await self.identificar(dibujo_png)
-            resultado.pasos.append(ident.metrica)
+        ident = await self.identificar(dibujo_png)
+        resultado.pasos.append(ident.metrica)
+        atributos = ident.atributos
+        if not personaje:
             if ident.disponible:
                 personaje = ident.hipotesis[0].etiqueta
             else:
                 personaje = PERSONAJE_GENERICO
                 resultado.avisos.append(AVISO_SIN_IDENTIFICACION)
         resultado.personaje = personaje
+        solicitud = SolicitudCuento(personaje, edad, PAGINAS, atributos)
 
         # Pasos 2 y 3 · escribir y moderar, con regeneración si se rechaza
         m_escribir = MetricaPaso("escribir", self.texto.proveedor)
         m_moderar = MetricaPaso("moderar", self.moderacion.proveedor)
         resultado.pasos += [m_escribir, m_moderar]
 
-        if not await self._moderar(m_moderar, resultado, "entrada", personaje):
+        entrada = personaje
+        if not atributos.vacio:
+            entrada += f"\n({atributos.como_texto()})"
+        if not await self._moderar(m_moderar, resultado, "entrada", entrada):
             m_escribir.estado = "omitido"
             resultado.estado = "rechazado"
             recorte_tarea.cancel()
             return
 
         cuento: CuentoTexto | None = None
-        incompletos = 0
         for _ in range(self.max_regeneraciones + 1):
             try:
                 candidato = await self._con_reintentos(
                     m_escribir,
                     "texto",
-                    lambda: self.texto.escribir_cuento(SolicitudCuento(personaje, edad)),
+                    lambda: self._escribir_completo(solicitud),
                     lambda r: r.uso,
                     self.texto.timeout_s,
                 )
@@ -279,20 +308,17 @@ class Orquestador:
                 resultado.estado = "fallido"
                 recorte_tarea.cancel()
                 return
-            if len(candidato.paginas) < 3:
-                incompletos += 1
-                continue
-            completo = candidato.titulo + "\n" + "\n".join(p.texto for p in candidato.paginas)
+            paginas_candidato = candidato.paginas[:PAGINAS]
+            completo = candidato.titulo + "\n" + "\n".join(p.texto for p in paginas_candidato)
             if await self._moderar(m_moderar, resultado, "cuento", completo):
                 cuento = candidato
                 break
         if cuento is None:
-            sin_moderar = incompletos == self.max_regeneraciones + 1
-            resultado.estado = "fallido" if sin_moderar else "rechazado"
+            resultado.estado = "rechazado"
             recorte_tarea.cancel()
             return
 
-        paginas = cuento.paginas[:3]
+        paginas = cuento.paginas[:PAGINAS]
         resultado.titulo = cuento.titulo.strip()[:200]
 
         # Pasos 4 y 5 · escenarios y narración en paralelo; ninguno bloquea al otro
@@ -303,9 +329,9 @@ class Orquestador:
             self._escenarios(m_escenarios, [p.escena for p in paginas]),
             self.narrar([p.texto for p in paginas], m_narrar),
         )
-        if m_escenarios.estado == "degradado":
+        if m_escenarios.estado in ("degradado", "omitido"):
             resultado.avisos.append(AVISO_SIN_ESCENARIOS)
-        if m_narrar.estado == "degradado":
+        if m_narrar.estado in ("degradado", "omitido"):
             resultado.avisos.append(AVISO_SIN_NARRACION)
 
         # Composición y subida al almacén
@@ -321,6 +347,14 @@ class Orquestador:
                 PaginaFinal(i, pagina.texto.strip(), clave_imagen(cuento_id, i), audio_clave)
             )
         resultado.estado = "listo"
+
+    async def _escribir_completo(self, solicitud: SolicitudCuento) -> CuentoTexto:
+        """Un cuento con menos páginas de las pedidas cuenta como intento fallido."""
+        cuento = await self.texto.escribir_cuento(solicitud)
+        validas = [p for p in cuento.paginas if p.texto.strip()]
+        if len(validas) < solicitud.paginas:
+            raise CuentoIncompleto(f"{len(validas)} de {solicitud.paginas} páginas")
+        return CuentoTexto(cuento.titulo, validas, cuento.uso)
 
     async def _moderar(
         self,
@@ -350,6 +384,10 @@ class Orquestador:
         return True
 
     async def _escenarios(self, metrica: MetricaPaso, escenas: list[str]) -> list[bytes]:
+        if not self.imagen.disponible:
+            # Capacidad apagada: fondo del banco sin llamar ni reintentar.
+            metrica.estado = "omitido"
+            return [fondo_del_banco(i) for i in range(len(escenas))]
         inicio = time.perf_counter()
 
         async def uno(i: int, escena: str) -> bytes:
@@ -375,6 +413,10 @@ class Orquestador:
     ) -> list[bytes | None]:
         """Paso 5. Público porque la app puede pedir reintentar solo la narración."""
         metrica = metrica or MetricaPaso("narrar", self.voz.proveedor)
+        if not self.voz.disponible:
+            # Capacidad apagada: cuento escrito, sin llamar ni reintentar.
+            metrica.estado = "omitido"
+            return [None] * len(textos)
         inicio = time.perf_counter()
 
         async def uno(texto: str) -> bytes | None:

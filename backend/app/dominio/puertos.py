@@ -33,9 +33,37 @@ class Hipotesis:
 
 
 @dataclass(frozen=True)
+class AtributosDibujo:
+    """Rasgos visibles del dibujo (colores, elementos, emoción) según la visión.
+
+    Describen el dibujo, no al niño: no son datos personales. Viajan al paso del cuento
+    para que el modelo no invente rasgos (p. ej. «pelaje marrón» en un dinosaurio verde).
+    """
+
+    colores: tuple[str, ...] = ()
+    elementos: tuple[str, ...] = ()
+    emocion: str = ""
+
+    @property
+    def vacio(self) -> bool:
+        return not (self.colores or self.elementos or self.emocion)
+
+    def como_texto(self) -> str:
+        partes = []
+        if self.colores:
+            partes.append("colores: " + ", ".join(self.colores))
+        if self.elementos:
+            partes.append("elementos: " + ", ".join(self.elementos))
+        if self.emocion:
+            partes.append("emoción: " + self.emocion)
+        return "; ".join(partes)
+
+
+@dataclass(frozen=True)
 class ResultadoVision:
     hipotesis: list[Hipotesis]
     uso: Uso = field(default_factory=Uso)
+    atributos: AtributosDibujo = field(default_factory=AtributosDibujo)
 
 
 @dataclass(frozen=True)
@@ -45,6 +73,7 @@ class SolicitudCuento:
     personaje: str
     edad: int
     paginas: int = 3
+    atributos: AtributosDibujo = field(default_factory=AtributosDibujo)
 
 
 @dataclass(frozen=True)
@@ -112,6 +141,8 @@ class IModerador(ABC):
 class IImagen(ABC):
     proveedor: str = "desconocido"
     timeout_s: float | None = None
+    # False = capacidad apagada (`PROVEEDOR_IMAGEN=ninguno`): el orquestador ni la llama.
+    disponible: bool = True
 
     @abstractmethod
     async def generar_fondo(self, descripcion: str) -> ResultadoImagen:
@@ -121,6 +152,8 @@ class IImagen(ABC):
 class IVoz(ABC):
     proveedor: str = "desconocido"
     timeout_s: float | None = None
+    # False = capacidad apagada (`PROVEEDOR_VOZ=ninguno`): el orquestador ni la llama.
+    disponible: bool = True
 
     @abstractmethod
     async def narrar(self, texto: str) -> ResultadoAudio:
