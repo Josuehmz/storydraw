@@ -156,15 +156,20 @@ class Orquestador:
         capacidad: Capacidad,
         llamada: Callable[[], Awaitable[T]],
         uso_de: Callable[[T], Uso],
+        timeout_s: float | None = None,
     ) -> T:
-        """Ejecuta una llamada con reintentos; acumula intentos, latencia y costo."""
+        """Ejecuta una llamada con reintentos; acumula intentos, latencia y costo.
+
+        `timeout_s` es el del adaptador (Ollama por CPU tarda minutos); si no trae, el global.
+        """
+        limite = timeout_s or self.timeout_s
         ultimo: BaseException | None = None
         inicio = time.perf_counter()
         try:
             for intento in range(self.reintentos + 1):
                 metrica.intentos += 1
                 try:
-                    resultado = await asyncio.wait_for(llamada(), timeout=self.timeout_s)
+                    resultado = await asyncio.wait_for(llamada(), timeout=limite)
                 except Exception as exc:
                     ultimo = exc
                     log.warning(
@@ -190,7 +195,11 @@ class Orquestador:
         metrica = MetricaPaso("identificar", self.vision.proveedor)
         try:
             res = await self._con_reintentos(
-                metrica, "vision", lambda: self.vision.identificar(dibujo_png), lambda r: r.uso
+                metrica,
+                "vision",
+                lambda: self.vision.identificar(dibujo_png),
+                lambda r: r.uso,
+                self.vision.timeout_s,
             )
         except FalloPaso:
             metrica.estado = "degradado"
@@ -245,7 +254,7 @@ class Orquestador:
 
         # Pasos 2 y 3 · escribir y moderar, con regeneración si se rechaza
         m_escribir = MetricaPaso("escribir", self.texto.proveedor)
-        m_moderar = MetricaPaso("moderar", self.texto.proveedor)
+        m_moderar = MetricaPaso("moderar", self.moderacion.proveedor)
         resultado.pasos += [m_escribir, m_moderar]
 
         if not await self._moderar(m_moderar, resultado, "entrada", personaje):
@@ -263,6 +272,7 @@ class Orquestador:
                     "texto",
                     lambda: self.texto.escribir_cuento(SolicitudCuento(personaje, edad)),
                     lambda r: r.uso,
+                    self.texto.timeout_s,
                 )
             except FalloPaso:
                 m_escribir.estado = "fallido"
@@ -321,7 +331,11 @@ class Orquestador:
     ) -> bool:
         try:
             veredicto = await self._con_reintentos(
-                metrica, "moderacion", lambda: self.moderacion.revisar(texto), lambda r: r.uso
+                metrica,
+                "moderacion",
+                lambda: self.moderacion.revisar(texto),
+                lambda r: r.uso,
+                self.moderacion.timeout_s,
             )
         except FalloPaso:
             # Falla cerrada: sin moderación no se muestra nada.
@@ -341,7 +355,11 @@ class Orquestador:
         async def uno(i: int, escena: str) -> bytes:
             try:
                 res = await self._con_reintentos(
-                    metrica, "imagen", lambda: self.imagen.generar_fondo(escena), lambda r: r.uso
+                    metrica,
+                    "imagen",
+                    lambda: self.imagen.generar_fondo(escena),
+                    lambda r: r.uso,
+                    self.imagen.timeout_s,
                 )
                 return res.png
             except FalloPaso:
@@ -362,7 +380,11 @@ class Orquestador:
         async def uno(texto: str) -> bytes | None:
             try:
                 res = await self._con_reintentos(
-                    metrica, "voz", lambda: self.voz.narrar(texto), lambda r: r.uso
+                    metrica,
+                    "voz",
+                    lambda: self.voz.narrar(texto),
+                    lambda r: r.uso,
+                    self.voz.timeout_s,
                 )
                 return res.mp3
             except FalloPaso:

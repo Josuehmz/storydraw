@@ -20,6 +20,8 @@ class Tarifario:
     voz_mil_caracteres: float = 0.05
 
     def costo(self, capacidad: Capacidad, uso: Uso) -> float:
+        if uso.costo_usd is not None:
+            return uso.costo_usd  # el adaptador ya lo calculó con su propia tarifa
         if capacidad == "vision":
             return (
                 uso.tokens_entrada * self.vision_entrada_mtok

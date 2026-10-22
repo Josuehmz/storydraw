@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from app.dominio.puertos import ITexto, Uso, VeredictoModeracion
+from app.dominio.puertos import IModerador, Uso, VeredictoModeracion
 
 # Primer filtro local, barato y sin red. No sustituye al proveedor: lo complementa.
 # Cada término es una expresión que debe coincidir con una palabra completa.
@@ -43,8 +43,8 @@ def _normalizar(texto: str) -> str:
 
 
 class Moderacion:
-    def __init__(self, texto: ITexto, terminos: tuple[str, ...] = _TERMINOS_BLOQUEADOS):
-        self._texto = texto
+    def __init__(self, moderador: IModerador, terminos: tuple[str, ...] = _TERMINOS_BLOQUEADOS):
+        self._moderador = moderador
         self._patron = re.compile(r"\b(" + "|".join(f"(?:{t})" for t in terminos) + r")\b")
 
     def revisar_local(self, texto: str) -> VeredictoModeracion:
@@ -58,4 +58,12 @@ class Moderacion:
         if not local.aprobado:
             return local
         # Si el proveedor lanza, la excepción sube: quien llama la trata como rechazo.
-        return await self._texto.moderar(texto)
+        return await self._moderador.moderar(texto)
+
+    @property
+    def proveedor(self) -> str:
+        return self._moderador.proveedor
+
+    @property
+    def timeout_s(self) -> float | None:
+        return self._moderador.timeout_s
