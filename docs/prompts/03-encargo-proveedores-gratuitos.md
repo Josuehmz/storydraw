@@ -1,14 +1,14 @@
 # Encargo: proveedores de IA gratuitos (PR #2)
 
-Enviado por Jarvis a fors el 2026-10-18, aprobado por Josue. Texto literal.
+Enviado por Jarvis a fors el 2026-10-18, aprobado por el autor. Texto literal.
 
 ---
 
-Encargo de Jarvis para fors. Josue lo aprobó el 2026-10-18. Trabaja con autonomía hasta terminar; si algo falla dos veces, detente y repórtalo.
+Encargo de Jarvis para fors. El autor lo aprobó el 2026-10-18. Trabaja con autonomía hasta terminar; si algo falla dos veces, detente y repórtalo.
 
 # Contexto
-Repo: C:/Users/josue/OneDrive/Documentos/Repositorios/personal/storydraw-app (Josuehmz/storydraw, privado). PR #1 (feature/implementacion-inicial -> qa) sigue abierto y sin mergear.
-Decisión de Josue: los proveedores de IA serán GRATUITOS. Producción/piloto: **Cloudflare Workers AI** (10.000 neuronas/día gratis). Prueba local de momento: **Ollama**, que ya corre en el host (http://localhost:11434, versión 0.40.3; el único modelo descargado es llama3.2:3b). El MVP es solo Android.
+Repo: C:/Users/<usuario>/OneDrive/Documentos/Repositorios/personal/storydraw-app (<usuario>/storydraw, privado). PR #1 (feature/implementacion-inicial -> qa) sigue abierto y sin mergear.
+Decisión del autor: los proveedores de IA serán GRATUITOS. Producción/piloto: **Cloudflare Workers AI** (10.000 neuronas/día gratis). Prueba local de momento: **Ollama**, que ya corre en el host (http://localhost:11434, versión 0.40.3; el único modelo descargado es llama3.2:3b). El MVP es solo Android.
 El PC es un Ryzen 7 3700U con 14 GB de RAM y sin GPU NVIDIA: Ollama va por CPU, a unos 5 tok/s; un cuento tarda minutos. Sube los timeouts del adaptador de Ollama (configurables).
 
 # Qué hacer
@@ -27,13 +27,13 @@ El PC es un Ryzen 7 3700U con 14 GB de RAM y sin GPU NVIDIA: Ollama va por CPU, 
 # Verificación real (Docker Desktop ya está corriendo)
 - `pytest` y `ruff check`.
 - `docker compose build` y levantar el stack completo (Postgres, MinIO, Mailpit y la API) con el perfil de Ollama. Corre las migraciones y haz el flujo completo por HTTP contra la API en Docker: registro, consentimiento, verificación por correo (sácala de Mailpit), login, perfil del niño y crear un cuento con un PNG de prueba usando **llama3.2:3b** para texto y moderación. La visión sin modelo de visión descargado va por la identificación asistida o la degradación que ya existe. Reporta el estado final del cuento, el texto que salió (resumido), qué pasos se degradaron y la latencia por paso que guarde el panel.
-- **NO descargues modelos de Ollama** (`ollama pull`) ni instales nada global: Josue todavía no autorizó la descarga del modelo de visión. Si para la prueba hace falta uno, repórtalo.
+- **NO descargues modelos de Ollama** (`ollama pull`) ni instales nada global: el autor todavía no autorizó la descarga del modelo de visión. Si para la prueba hace falta uno, repórtalo.
 - Cloudflare no tiene credenciales: queda probado solo con HTTP simulado. No pidas ni escribas claves.
 - Al terminar, baja el stack (`docker compose down`, SIN `-v` no hace falta conservar nada, pero no borres imágenes ajenas al proyecto).
 
-# Git (reglas de Josue)
-- Commits en español, autor `Josué Hernández`, sin coautor y sin mencionar ninguna IA. Busca secretos antes de cada commit; nunca subas `.env`.
-- Push de `feature/proveedores-gratuitos` y abre el PR #2 hacia `qa` con `gh pr create --base qa`. En la descripción, aclara que incluye los commits del PR #1. NO mergees nada y NO borres ni cierres `feature/implementacion-inicial` ni el PR #1: eso lo decide Josue.
+# Git (reglas del autor)
+- Commits en español, autor `<autor del repositorio>`, sin coautor y sin mencionar ninguna IA. Busca secretos antes de cada commit; nunca subas `.env`.
+- Push de `feature/proveedores-gratuitos` y abre el PR #2 hacia `qa` con `gh pr create --base qa`. En la descripción, aclara que incluye los commits del PR #1. NO mergees nada y NO borres ni cierres `feature/implementacion-inicial` ni el PR #1: eso lo decidel autor.
 
 # Vault
 Actualiza [[storydraw-app]] y lo que corresponda (decisión nueva `2026-10-18 Proveedores de IA gratuitos: Cloudflare y Ollama`, que supera a la parte de la reescritura que decía "OpenAI para todo", con «Corregido el …»), contexto, index, hub, log y obsoletos. Valida con `py sistema/check-vault.py --index` y luego sin `--index` hasta que quede en verde. Sin git en el vault y sin respaldar memorias.
