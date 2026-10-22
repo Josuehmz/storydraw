@@ -31,26 +31,12 @@ abstract interface class CuentosRepositorio {
   Future<String> crear({required String perfilId, required Uint8List dibujo, String? personaje});
 
   /// Consulta hasta que el cuento sale de `en_proceso` y, si está listo,
-  /// descarga páginas y audio a la caché local.
+  /// descarga las páginas a la caché local.
   Future<Cuento> esperar(String cuentoId);
-
-  /// Reintenta solo la narración que faltó.
-  Future<Cuento> reintentarNarracion(String cuentoId);
 
   /// Cuentos del perfil: los de la caché siempre; los del servidor si hay red.
   Future<List<Cuento>> biblioteca(String perfilId);
 
   /// Borrado a petición (servidor y caché).
   Future<void> borrar(String cuentoId);
-}
-
-/// Reproductor de la narración (just_audio en la app, falso en las pruebas).
-abstract interface class Reproductor {
-  Stream<bool> get reproduciendo;
-
-  Future<void> reproducir(Uint8List mp3);
-
-  Future<void> detener();
-
-  Future<void> liberar();
 }

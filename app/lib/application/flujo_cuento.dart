@@ -93,19 +93,6 @@ class FlujoCuentoNotifier extends Notifier<EstadoFlujo> {
     state = state.copiar(fase: Fase.eligiendo);
   }
 
-  Future<void> reintentarNarracion() async {
-    final cuento = state.cuento;
-    if (cuento == null) return;
-    try {
-      final nuevo = await ref.read(cuentosRepositorioProvider).reintentarNarracion(cuento.id);
-      if (!ref.mounted) return;
-      state = state.copiar(cuento: nuevo);
-      ref.invalidate(bibliotecaProvider);
-    } on ErrorApi catch (_) {
-      // El aviso sigue visible y el niño puede volver a intentarlo.
-    }
-  }
-
   /// Termina el flujo y suelta el dibujo de la memoria.
   void reiniciar() => state = const EstadoFlujo();
 }

@@ -24,13 +24,11 @@ class CacheCuentos {
   final Box<Uint8List> _medios;
 
   static String _claveImagen(String id, int n) => '$id/$n/imagen';
-  static String _claveAudio(String id, int n) => '$id/$n/audio';
 
   Future<void> guardar(Cuento cuento) async {
     await _cuentos.put(cuento.id, jsonEncode(cuento.aJson()));
     for (final p in cuento.paginas) {
       if (p.imagen != null) await _medios.put(_claveImagen(cuento.id, p.numero), p.imagen!);
-      if (p.audio != null) await _medios.put(_claveAudio(cuento.id, p.numero), p.audio!);
     }
   }
 
@@ -41,11 +39,7 @@ class CacheCuentos {
     if (json == null) return null;
     final cuento = Cuento.desdeJson(jsonDecode(json) as Map<String, dynamic>);
     return cuento.conPaginas([
-      for (final p in cuento.paginas)
-        p.conMedios(
-          imagen: _medios.get(_claveImagen(id, p.numero)),
-          audio: _medios.get(_claveAudio(id, p.numero)),
-        ),
+      for (final p in cuento.paginas) p.conMedios(imagen: _medios.get(_claveImagen(id, p.numero))),
     ]);
   }
 
@@ -63,7 +57,6 @@ class CacheCuentos {
     await _cuentos.delete(id);
     for (final p in cuento?.paginas ?? const <Pagina>[]) {
       await _medios.delete(_claveImagen(id, p.numero));
-      await _medios.delete(_claveAudio(id, p.numero));
     }
   }
 

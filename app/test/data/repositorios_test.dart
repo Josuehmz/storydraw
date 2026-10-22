@@ -51,24 +51,19 @@ ResponseBody bytes(List<int> datos) => ResponseBody.fromBytes(
   },
 );
 
-Map<String, dynamic> cuentoJson(String id, String estado, {bool audio = true}) => {
+Map<String, dynamic> cuentoJson(String id, String estado) => {
   'id': id,
   'perfil_id': 'p1',
   'estado': estado,
   'titulo': estado == 'listo' ? 'El dragón' : null,
   'personaje': estado == 'listo' ? 'un dragón' : null,
-  'avisos': audio ? <String>[] : ['sin_narracion'],
+  'avisos': <String>[],
   'creado_en': '2026-10-17T10:00:00Z',
   'paginas': estado != 'listo'
       ? <Object>[]
       : [
           for (var n = 1; n <= 3; n++)
-            {
-              'numero': n,
-              'texto': 'Página $n',
-              'imagen_url': '/v1/cuentos/$id/paginas/$n/imagen',
-              'audio_url': audio ? '/v1/cuentos/$id/paginas/$n/audio' : null,
-            },
+            {'numero': n, 'texto': 'Página $n', 'imagen_url': '/v1/cuentos/$id/paginas/$n/imagen'},
         ],
 };
 
@@ -126,7 +121,6 @@ void main() {
         return json(cuentoJson('c9', consultas < 3 ? 'en_proceso' : 'listo'));
       }
       if (o.path.endsWith('/imagen')) return bytes([137, 80, 78, 71]);
-      if (o.path.endsWith('/audio')) return bytes([73, 68, 51]);
       return json({}, 404);
     };
 
@@ -137,7 +131,9 @@ void main() {
     final cuento = await repo.esperar(id);
     expect(consultas, 3);
     expect(cuento.estado, EstadoCuento.listo);
-    expect(cuento.paginas.every((p) => p.imagen != null && p.audio != null), isTrue);
+    expect(cuento.paginas.every((p) => p.imagen != null), isTrue);
+    // Sin narración: solo se piden las imágenes, nunca un audio
+    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), isEmpty);
 
     final guardado = cache.leer('c9')!;
     expect(guardado.titulo, 'El dragón');
@@ -194,18 +190,6 @@ void main() {
     expect(http.peticiones.single.method, 'DELETE');
     expect(http.peticiones.single.path, '/v1/cuentos/c1');
     expect(cache.contiene('c1'), isFalse);
-  });
-
-  test('reintentar la narración reemplaza el cuento en caché', () async {
-    await cache.guardar(Cuento.desdeJson(cuentoJson('c1', 'listo', audio: false)));
-    expect(cache.leer('c1')!.sinNarracion, isTrue);
-    http.manejar = (o) {
-      if (o.path == '/v1/cuentos/c1/narracion') return json(cuentoJson('c1', 'listo'));
-      return bytes([5]);
-    };
-    final cuento = await repo.reintentarNarracion('c1');
-    expect(cuento.sinNarracion, isFalse);
-    expect(cache.leer('c1')!.paginas.every((p) => p.audio != null), isTrue);
   });
 
   group('cliente HTTP', () {
