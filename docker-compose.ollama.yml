@@ -1,0 +1,25 @@
+# Prueba local gratuita con Ollama corriendo en el host (no en Docker).
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build
+# Texto, visión y moderación (LLM, SOLO DESARROLLO) van a Ollama con gemma3:4b, que también
+# ve imágenes. Ollama no genera imágenes, así que los escenarios salen del banco de fondos
+# (PROVEEDOR_IMAGEN=ninguno, sin reintentos). El cuento sale sin narración.
+# Lo de aquí pisa al .env solo en estas variables.
+services:
+  api:
+    environment:
+      ENTORNO: desarrollo
+      PROVEEDOR_VISION: ollama
+      PROVEEDOR_TEXTO: ollama
+      PROVEEDOR_MODERACION: ollama
+      PROVEEDOR_IMAGEN: ninguno
+      PROVEEDOR_CORREO: smtp
+      ALMACEN: s3
+      OLLAMA_URL: ${OLLAMA_URL_DOCKER:-http://host.docker.internal:11434}
+      OLLAMA_MODELO_TEXTO: ${OLLAMA_MODELO_TEXTO:-gemma3:4b}
+      OLLAMA_MODELO_MODERACION: ${OLLAMA_MODELO_MODERACION:-gemma3:4b}
+      OLLAMA_MODELO_VISION: ${OLLAMA_MODELO_VISION:-gemma3:4b}
+      # Por CPU un cuento tarda minutos: timeout largo y sin reintentos que lo multipliquen
+      OLLAMA_TIMEOUT_S: ${OLLAMA_TIMEOUT_S:-900}
+      REINTENTOS_POR_PASO: ${REINTENTOS_POR_PASO:-1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
