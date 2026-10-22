@@ -132,8 +132,12 @@ PROMPT_CUENTO = (
     "2. Vocabulario adecuado a la edad; frases cortas; tono cálido.\n"
     "3. Nada de violencia, miedo intenso, armas, sustancias, romance ni marcas comerciales.\n"
     "4. El protagonista no cambia de forma ni de nombre.\n"
-    "5. En «escena», describe en inglés solo el fondo de esa página (lugar, luz, colores), "
-    "sin personajes ni texto, en estilo ilustración infantil.\n"
+    "5. En «escena», describe en inglés solo el fondo de esa página: paisaje natural y "
+    "objetos (lugar, luz, colores), sin personajes, personas, animales ni texto. Evita "
+    "lugares que sugieren gente, como casas, jardines con cercas, calles o parques "
+    "infantiles; prefiere bosques, praderas, ríos, montañas, cielos o playas. Mantén el "
+    "mismo lugar y la misma paleta de colores entre páginas para que el estilo sea "
+    "coherente.\n"
     "6. {rasgos}"
 )
 
@@ -172,9 +176,13 @@ PROMPT_MODERACION = (
 
 
 def prompt_fondo(descripcion: str) -> str:
+    """Prompt de fondo para cualquier proveedor de imagen: estilo lápices de colores y
+    crayón de libro de cuentos (elegido por Josue el 2026-10-22), sin fotorrealismo."""
     return (
-        "Children's picture-book background illustration, soft colors, no characters, "
-        f"no people, no animals, no text. Scene: {descripcion}"
+        "Colored pencil and crayon illustration from a children's storybook, hand-drawn "
+        "outlines, simple shapes, bright cheerful colors, grainy paper texture, flat 2D "
+        "naive style like a picture book, not photorealistic, not 3D. "
+        f"Scene: {descripcion}. No characters, no people, no animals, no text, no letters."
     )
 
 

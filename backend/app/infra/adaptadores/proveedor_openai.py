@@ -27,7 +27,7 @@ from app.dominio.puertos import (
 from app.infra.adaptadores.comun import ESQUEMA_CUENTO as _ESQUEMA_CUENTO
 from app.infra.adaptadores.comun import ESQUEMA_VISION as _ESQUEMA_VISION
 from app.infra.adaptadores.comun import PROMPT_VISION as _PROMPT_VISION
-from app.infra.adaptadores.comun import atributos_desde, mensaje_solicitud
+from app.infra.adaptadores.comun import atributos_desde, mensaje_solicitud, prompt_fondo
 
 
 def _uso_chat(respuesta) -> Uso:
@@ -111,13 +111,9 @@ class ImagenOpenAI(_BaseOpenAI, IImagen):
         self._tamano = tamano
 
     async def generar_fondo(self, descripcion: str) -> ResultadoImagen:
-        prompt = (
-            "Children's picture-book background illustration, soft colors, no characters, "
-            f"no people, no animals, no text. Scene: {descripcion}"
-        )
         respuesta = await self._cliente.images.generate(
             model=self._modelo,
-            prompt=prompt,
+            prompt=prompt_fondo(descripcion),
             size=self._tamano,
             quality=self._calidad,
             n=1,
