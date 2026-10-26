@@ -96,18 +96,24 @@ class _PantallaLienzoState extends ConsumerState<PantallaLienzo> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: RepaintBoundary(
-                    key: _clave,
-                    child: GestureDetector(
-                      key: const Key('lienzo'),
-                      onPanStart: (d) => lienzo.empezar(d.localPosition),
-                      onPanUpdate: (d) => lienzo.mover(d.localPosition),
-                      onPanEnd: (_) => lienzo.terminar(),
-                      child: CustomPaint(
-                        painter: PintorLienzo(estado),
-                        child: const SizedBox.expand(),
+                  child: Stack(
+                    children: [
+                      RepaintBoundary(
+                        key: _clave,
+                        child: GestureDetector(
+                          key: const Key('lienzo'),
+                          onPanStart: (d) => lienzo.empezar(d.localPosition),
+                          onPanUpdate: (d) => lienzo.mover(d.localPosition),
+                          onPanEnd: (_) => lienzo.terminar(),
+                          child: CustomPaint(
+                            painter: PintorLienzo(estado),
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
                       ),
-                    ),
+                      // Fuera del RepaintBoundary: nunca sale en el dibujo exportado.
+                      if (estado.vacio) const Positioned.fill(child: _PistaLienzoVacio()),
+                    ],
                   ),
                 ),
               ),
@@ -158,6 +164,78 @@ class _PantallaLienzoState extends ConsumerState<PantallaLienzo> {
       ),
     );
   }
+}
+
+/// Pista sin texto en el lienzo vacío: un dedo sobre un garabato punteado = «dibuja aquí».
+/// No recibe toques (IgnorePointer) y desaparece con el primer trazo.
+class _PistaLienzoVacio extends StatelessWidget {
+  const _PistaLienzoVacio();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Center(
+        key: const Key('pista-lienzo'),
+        child: SizedBox(
+          width: 220,
+          height: 180,
+          child: Stack(
+            children: [
+              Positioned.fill(child: CustomPaint(painter: _GarabatoPunteado())),
+              const Positioned(
+                right: 18,
+                bottom: 4,
+                child: Icon(Icons.touch_app, size: 96, color: Colores.naranja),
+              ),
+              Positioned(
+                left: 6,
+                top: 0,
+                child: Icon(Icons.brush, size: 56, color: Colores.azul.withValues(alpha: 0.8)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GarabatoPunteado extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pintura = Paint()
+      ..color = Colores.azul.withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+    final camino = Path()
+      ..moveTo(size.width * 0.12, size.height * 0.62)
+      ..cubicTo(
+        size.width * 0.3,
+        size.height * 0.2,
+        size.width * 0.45,
+        size.height * 0.95,
+        size.width * 0.62,
+        size.height * 0.55,
+      )
+      ..cubicTo(
+        size.width * 0.72,
+        size.height * 0.3,
+        size.width * 0.8,
+        size.height * 0.35,
+        size.width * 0.84,
+        size.height * 0.5,
+      );
+    // Raya punteada: tramos de 14 px con huecos de 12 px.
+    for (final metrica in camino.computeMetrics()) {
+      for (var d = 0.0; d < metrica.length; d += 26) {
+        canvas.drawPath(metrica.extractPath(d, d + 14), pintura);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GarabatoPunteado viejo) => false;
 }
 
 class _Muestra extends StatelessWidget {
