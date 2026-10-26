@@ -66,20 +66,45 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
     }
   }
 
+  Future<void> _entrarComoInvitado() async {
+    setState(() {
+      _cargando = true;
+      _mensaje = null;
+    });
+    try {
+      await ref.read(sesionProvider.notifier).entrarComoInvitado();
+    } on ErrorApi catch (e) {
+      setState(
+        () => _mensaje = e.tipo == TipoError.noEncontrado
+            ? 'El servidor no tiene activado el modo invitado (PERMITIR_INVITADOS).'
+            : _textoError(e),
+      );
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final puedeEnviar = !_cargando && (!_registro || _consiente);
+    final modoInvitado = ref.watch(configProvider).modoInvitado;
     return Scaffold(
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            const Icon(Icons.auto_stories, size: 96, color: Colores.naranja),
-            const Text(
-              'StoryDraw',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900),
+            Semantics(
+              label: 'StoryDraw',
+              image: true,
+              child: Image.asset(
+                'assets/marca/logo.png',
+                key: const Key('logo'),
+                height: 88,
+                fit: BoxFit.contain,
+                excludeFromSemantics: true,
+              ),
             ),
+            const SizedBox(height: 8),
             const Text(
               'Para padres, madres o tutores',
               textAlign: TextAlign.center,
@@ -134,6 +159,28 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
                   ? const CircularProgressIndicator(color: Colors.white)
                   : Text(_registro ? 'Crear cuenta' : 'Entrar'),
             ),
+            if (modoInvitado) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const Key('boton-invitado'),
+                onPressed: _cargando ? null : _entrarComoInvitado,
+                icon: const Icon(Icons.person_outline),
+                label: const Text('Entrar como invitado'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colores.azul,
+                  side: const BorderSide(color: Colores.azul, width: 2),
+                  minimumSize: const Size(kToqueMinimo, kToqueMinimo),
+                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Solo para pruebas: sin cuenta, y los cuentos se guardan solo en este dispositivo.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13),
+              ),
+            ],
             if (_mensaje != null) ...[
               const SizedBox(height: 16),
               Text(_mensaje!, key: const Key('mensaje-acceso'), textAlign: TextAlign.center),

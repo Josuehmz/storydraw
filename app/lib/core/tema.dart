@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 /// Paleta vibrante y botones grandes: la app la usan niños de 6 a 12 años.
+/// El naranja y el azul salen del logo (`assets/marca/logo.png`).
 abstract final class Colores {
-  static const naranja = Color(0xFFFF6B35); // acción principal y campo libre
+  static const naranja = Color(0xFFFF6B35); // marca («Draw» y el lápiz); acción principal
+  static const azul = Color(0xFF2E86AA); // marca (el trazo del logo)
   static const violeta = Color(0xFF7C5CBF); // voz de la IA
   static const amarillo = Color(0xFFFFD23F);
   static const crema = Color(0xFFFFF8F0);
@@ -32,7 +34,12 @@ const double kToqueMinimo = 64;
 ThemeData construirTema() {
   final base = ThemeData(
     useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(seedColor: Colores.naranja, surface: Colores.crema),
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: Colores.naranja,
+      secondary: Colores.azul,
+      onSecondary: Colors.white,
+      surface: Colores.crema,
+    ),
   );
   return base.copyWith(
     scaffoldBackgroundColor: Colores.crema,

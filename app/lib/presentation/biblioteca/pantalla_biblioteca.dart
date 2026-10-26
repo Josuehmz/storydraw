@@ -48,46 +48,50 @@ class PantallaBiblioteca extends ConsumerWidget {
         title: const Icon(Icons.collections_bookmark, size: 40, color: Colores.verde),
         centerTitle: true,
       ),
-      body: RefreshIndicator(
-        onRefresh: () => ref.refresh(bibliotecaProvider.future),
-        child: biblioteca.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (_, _) => ListView(
-            children: const [
-              SizedBox(height: 120),
-              Icon(Icons.cloud_off, size: 96, color: Colores.violeta),
-            ],
-          ),
-          data: (cuentos) => cuentos.isEmpty
-              ? ListView(
-                  children: const [
-                    SizedBox(height: 120),
-                    Icon(
-                      Icons.brush,
-                      key: Key('biblioteca-vacia'),
-                      size: 96,
-                      color: Colores.naranja,
-                    ),
-                  ],
-                )
-              : GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: MediaQuery.sizeOf(context).shortestSide >= 600 ? 3 : 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.8,
-                  ),
-                  itemCount: cuentos.length,
-                  itemBuilder: (_, i) => _Portada(
-                    cuento: cuentos[i],
-                    alAbrir: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(builder: (_) => PantallaCuento(cuento: cuentos[i])),
-                    ),
-                    alBorrar: () => _confirmarBorrado(context, ref, cuentos[i]),
-                  ),
-                ),
+      body: Column(
+        children: [
+          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 4), child: AvisoInvitado()),
+          Expanded(child: _contenido(context, ref, biblioteca)),
+        ],
+      ),
+    );
+  }
+
+  Widget _contenido(BuildContext context, WidgetRef ref, AsyncValue<List<Cuento>> biblioteca) {
+    return RefreshIndicator(
+      onRefresh: () => ref.refresh(bibliotecaProvider.future),
+      child: biblioteca.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (_, _) => ListView(
+          children: const [
+            SizedBox(height: 120),
+            Icon(Icons.cloud_off, size: 96, color: Colores.violeta),
+          ],
         ),
+        data: (cuentos) => cuentos.isEmpty
+            ? ListView(
+                children: const [
+                  SizedBox(height: 120),
+                  Icon(Icons.brush, key: Key('biblioteca-vacia'), size: 96, color: Colores.naranja),
+                ],
+              )
+            : GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: MediaQuery.sizeOf(context).shortestSide >= 600 ? 3 : 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.8,
+                ),
+                itemCount: cuentos.length,
+                itemBuilder: (_, i) => _Portada(
+                  cuento: cuentos[i],
+                  alAbrir: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => PantallaCuento(cuento: cuentos[i])),
+                  ),
+                  alBorrar: () => _confirmarBorrado(context, ref, cuentos[i]),
+                ),
+              ),
       ),
     );
   }

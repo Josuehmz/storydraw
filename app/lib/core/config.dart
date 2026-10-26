@@ -13,13 +13,20 @@ class AppConfig {
     this.intervaloConsulta = const Duration(seconds: 2),
     this.esperaMaxima = const Duration(minutes: 3),
     this.reintentosHttp = 2,
+    this.modoInvitado = false,
   });
 
   factory AppConfig.desdeEntorno() => const AppConfig(
     apiUrl: String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000'),
+    modoInvitado: bool.fromEnvironment('MODO_INVITADO'),
   );
 
   final String apiUrl;
+
+  /// Botón «Entrar como invitado». SOLO PRUEBAS LOCALES: se enciende con
+  /// `--dart-define=MODO_INVITADO=true` y el backend además necesita
+  /// `PERMITIR_INVITADOS=true`, que en producción está prohibido.
+  final bool modoInvitado;
 
   /// Tiempo máximo de cada petición HTTP (contrato con el backend: 90 s).
   final Duration timeout;

@@ -5,6 +5,7 @@ import '../core/config.dart';
 import '../core/http.dart';
 import '../data/cache_cuentos.dart';
 import '../data/repositorios_api.dart';
+import '../data/repositorios_invitado.dart';
 import '../data/sesion_local.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -27,29 +28,53 @@ final dioProvider = Provider<Dio>((ref) {
   return crearDio(ref.watch(configProvider), token: () => sesion.token);
 });
 
-final cuentasRepositorioProvider = Provider<CuentasRepositorio>(
-  (ref) => CuentasRepositorioApi(
+final cuentasRepositorioProvider = Provider<CuentasRepositorio>((ref) {
+  if (ref.watch(sesionProvider.select((s) => s.invitado))) {
+    return ref.watch(cuentasInvitadoProvider);
+  }
+  return CuentasRepositorioApi(
+    ref.watch(dioProvider),
+    ref.watch(sesionLocalProvider),
+    ref.watch(cacheProvider),
+  );
+});
+
+final cuentosRepositorioProvider = Provider<CuentosRepositorio>((ref) {
+  if (ref.watch(sesionProvider.select((s) => s.invitado))) {
+    return CuentosRepositorioInvitado(
+      ref.watch(dioProvider),
+      ref.watch(cacheProvider),
+      ref.watch(configProvider),
+      ref.watch(sesionLocalProvider),
+      ref.watch(cuentasInvitadoProvider),
+    );
+  }
+  return CuentosRepositorioApi(
+    ref.watch(dioProvider),
+    ref.watch(cacheProvider),
+    ref.watch(configProvider),
+  );
+});
+
+/// Modo invitado (solo pruebas locales): perfiles y cuentos solo en el dispositivo.
+final cuentasInvitadoProvider = Provider<CuentasRepositorioInvitado>(
+  (ref) => CuentasRepositorioInvitado(
     ref.watch(dioProvider),
     ref.watch(sesionLocalProvider),
     ref.watch(cacheProvider),
   ),
 );
 
-final cuentosRepositorioProvider = Provider<CuentosRepositorio>(
-  (ref) => CuentosRepositorioApi(
-    ref.watch(dioProvider),
-    ref.watch(cacheProvider),
-    ref.watch(configProvider),
-  ),
-);
-
 // ------------------------------------------------------------------- sesión
 
 class EstadoSesion {
-  const EstadoSesion({required this.autenticado, this.perfil});
+  const EstadoSesion({required this.autenticado, this.perfil, this.invitado = false});
 
   final bool autenticado;
   final Perfil? perfil;
+
+  /// Entró como invitado: sin cuenta, todo se guarda solo en el dispositivo.
+  final bool invitado;
 }
 
 class SesionNotifier extends Notifier<EstadoSesion> {
@@ -61,6 +86,7 @@ class SesionNotifier extends Notifier<EstadoSesion> {
     final id = local.perfilId;
     return EstadoSesion(
       autenticado: local.token != null,
+      invitado: local.token != null && local.invitado,
       perfil: id == null
           ? null
           : Perfil(id: id, apodo: local.perfilApodo ?? '', edad: local.perfilEdad ?? 8),
@@ -72,14 +98,20 @@ class SesionNotifier extends Notifier<EstadoSesion> {
     state = const EstadoSesion(autenticado: true);
   }
 
+  /// Solo existe si la app se compiló con `MODO_INVITADO=true`.
+  Future<void> entrarComoInvitado() async {
+    await ref.read(cuentasInvitadoProvider).entrar();
+    state = const EstadoSesion(autenticado: true, invitado: true);
+  }
+
   Future<void> elegirPerfil(Perfil perfil) async {
     await _local.elegirPerfil(id: perfil.id, apodo: perfil.apodo, edad: perfil.edad);
-    state = EstadoSesion(autenticado: true, perfil: perfil);
+    state = EstadoSesion(autenticado: true, perfil: perfil, invitado: state.invitado);
   }
 
   Future<void> cambiarPerfil() async {
     await _local.olvidarPerfil();
-    state = const EstadoSesion(autenticado: true);
+    state = EstadoSesion(autenticado: true, invitado: state.invitado);
   }
 
   Future<void> cerrar() async {

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/proveedores.dart';
 import '../../core/tema.dart';
 
 /// Botón redondo solo con icono, grande, para el niño.
@@ -109,6 +111,41 @@ class AvisoInfo extends StatelessWidget {
             ),
           ),
           ?accion,
+        ],
+      ),
+    );
+  }
+}
+
+/// Texto del aviso del modo invitado (solo pruebas locales).
+const textoAvisoInvitado = 'Modo invitado: tus cuentos se guardan solo en este dispositivo';
+
+/// Franja del modo invitado. Solo se ve si se entró como invitado.
+class AvisoInvitado extends ConsumerWidget {
+  const AvisoInvitado({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(sesionProvider.select((s) => s.invitado))) return const SizedBox.shrink();
+    return Container(
+      key: const Key('aviso-invitado'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colores.azul.withValues(alpha: 0.12),
+        border: Border.all(color: Colores.azul, width: 2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.phone_android, color: Colores.azul, size: 28),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              textoAvisoInvitado,
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colores.texto),
+            ),
+          ),
         ],
       ),
     );

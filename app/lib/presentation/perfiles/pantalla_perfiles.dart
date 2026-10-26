@@ -4,9 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/proveedores.dart';
 import '../../core/tema.dart';
 import '../../domain/entidades.dart';
+import '../widgets/comunes.dart';
 
 final perfilesProvider = FutureProvider<List<Perfil>>(
-  (ref) => ref.read(cuentasRepositorioProvider).perfiles(),
+  (ref) => ref.watch(cuentasRepositorioProvider).perfiles(),
 );
 
 /// Elegir o crear el perfil del niño (6 a 12 años). Lo maneja el adulto.
@@ -93,7 +94,9 @@ class PantallaPerfiles extends ConsumerWidget {
         title: const Text('¿Quién va a dibujar?'),
         actions: [
           IconButton(
-            tooltip: 'Cerrar sesión',
+            tooltip: ref.watch(sesionProvider).invitado
+                ? 'Salir del modo invitado'
+                : 'Cerrar sesión',
             icon: const Icon(Icons.logout),
             onPressed: () => ref.read(sesionProvider.notifier).cerrar(),
           ),
@@ -104,48 +107,54 @@ class PantallaPerfiles extends ConsumerWidget {
         onPressed: () => _crear(context, ref),
         child: const Icon(Icons.person_add, size: 40),
       ),
-      body: perfiles.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(
-          child: IconButton(
-            iconSize: 72,
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(perfilesProvider),
-          ),
+      body: Column(
+        children: [
+          const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: AvisoInvitado()),
+          Expanded(child: _lista(context, ref, perfiles)),
+        ],
+      ),
+    );
+  }
+
+  Widget _lista(BuildContext context, WidgetRef ref, AsyncValue<List<Perfil>> perfiles) {
+    return perfiles.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, _) => Center(
+        child: IconButton(
+          iconSize: 72,
+          icon: const Icon(Icons.refresh),
+          onPressed: () => ref.invalidate(perfilesProvider),
         ),
-        data: (lista) => GridView.count(
-          padding: const EdgeInsets.all(16),
-          crossAxisCount: 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          children: [
-            for (final (i, p) in lista.indexed)
-              InkWell(
-                key: Key('perfil-${p.id}'),
-                borderRadius: BorderRadius.circular(24),
-                onTap: () => ref.read(sesionProvider.notifier).elegirPerfil(p),
-                onLongPress: () => _borrar(context, ref, p),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircleAvatar(
-                      radius: 52,
-                      backgroundColor: _avatares[i % _avatares.length],
-                      child: Text(
-                        p.apodo.characters.first.toUpperCase(),
-                        style: const TextStyle(fontSize: 44, color: Colors.white),
-                      ),
+      ),
+      data: (lista) => GridView.count(
+        padding: const EdgeInsets.all(16),
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        children: [
+          for (final (i, p) in lista.indexed)
+            InkWell(
+              key: Key('perfil-${p.id}'),
+              borderRadius: BorderRadius.circular(24),
+              onTap: () => ref.read(sesionProvider.notifier).elegirPerfil(p),
+              onLongPress: () => _borrar(context, ref, p),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: 52,
+                    backgroundColor: _avatares[i % _avatares.length],
+                    child: Text(
+                      p.apodo.characters.first.toUpperCase(),
+                      style: const TextStyle(fontSize: 44, color: Colors.white),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      p.apodo,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(p.apodo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
