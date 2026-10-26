@@ -80,3 +80,34 @@ async def procesar_cuento(
 async def borrar_cuentos(c: Contenedor, ids: list[uuid.UUID]) -> None:
     for cuento_id in ids:
         await c.almacen.borrar_prefijo(f"cuentos/{cuento_id}/")
+
+
+async def procesar_cuento_invitado(
+    c: Contenedor, trabajo_id: uuid.UUID, dibujo_png: bytes, personaje: str | None, edad: int
+) -> None:
+    """Como `procesar_cuento`, pero sin base de datos: el resultado (con las páginas en
+    memoria) espera a que la app lo recoja y el almacén se vacía al terminar. La
+    moderación es la misma del orquestador: nada sin moderar llega al invitado."""
+    prefijo = f"cuentos/{trabajo_id}/"
+    imagenes: dict[int, bytes] = {}
+    try:
+        resultado = await c.orquestador.crear_cuento(str(trabajo_id), dibujo_png, personaje, edad)
+        if resultado.estado == "listo":
+            for pagina in resultado.paginas:
+                imagenes[pagina.numero] = await c.almacen.leer(pagina.imagen_clave)
+    except Exception:
+        log.exception("invitado cuento=%s fallo inesperado", trabajo_id)
+        resultado = ResultadoCuento(estado="fallido")
+        imagenes = {}
+    finally:
+        del dibujo_png
+        await c.almacen.borrar_prefijo(prefijo)
+    c.invitados.terminar(trabajo_id, resultado, imagenes)
+    log.info(
+        "invitado cuento=%s estado=%s latencia_ms=%d costo_usd=%.5f avisos=%s",
+        trabajo_id,
+        resultado.estado,
+        resultado.latencia_ms,
+        resultado.costo_usd,
+        ",".join(resultado.avisos),
+    )

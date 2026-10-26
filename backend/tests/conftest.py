@@ -43,6 +43,7 @@ def settings_de_prueba(ruta_bd: Path, **cambios) -> Settings:
         limite_identificar="1000/minute",
         limite_cuentos_ip="1000/minute",
         limite_cuentos_cuenta="1000/minute",
+        limite_invitado_ip="1000/minute",
     )
     base.update(cambios)
     return Settings(_env_file=None, **base)

@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     contenido_emails: str = ""
 
+    # Modo invitado: SOLO PRUEBAS LOCALES. Deja generar cuentos sin cuenta ni
+    # consentimiento; el cuento no se guarda en el servidor (la app lo guarda en el
+    # dispositivo). Apagado por defecto y prohibido con ENTORNO=produccion.
+    permitir_invitados: bool = False
+    invitado_minutos: int = Field(120, ge=5, le=24 * 60)
+    # Lo no recogido por la app se descarta pasado este tiempo
+    invitado_retencion_minutos: int = Field(30, ge=1, le=24 * 60)
+
     # Un adaptador por capacidad: cambiar de proveedor es cambiar esta variable
     # (ninguno = el proveedor no tiene esa capacidad y el paso se degrada)
     proveedor_vision: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
@@ -128,6 +136,7 @@ class Settings(BaseSettings):
     limite_identificar: str = "10/minute"
     limite_cuentos_ip: str = "5/minute"
     limite_cuentos_cuenta: str = "30/day"
+    limite_invitado_ip: str = "3/minute;20/day"
 
     # Tarifas en USD (para el costo por cuento del panel de operación)
     precio_texto_entrada_mtok: float = 0.20
@@ -154,6 +163,11 @@ class Settings(BaseSettings):
                 raise ValueError(f"En producción no se permiten adaptadores falsos: {falsos}")
             if self.almacen == "memoria":
                 raise ValueError("En producción ALMACEN debe ser s3")
+            if self.permitir_invitados:
+                raise ValueError(
+                    "PERMITIR_INVITADOS es solo para pruebas locales: "
+                    "en producción no se permiten cuentos sin cuenta ni consentimiento"
+                )
             if self.proveedor_moderacion in ("ollama", "cloudflare"):
                 raise ValueError(
                     "La moderación con LLM genérico es solo para desarrollo: "

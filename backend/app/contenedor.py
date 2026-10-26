@@ -6,7 +6,7 @@ su adaptador y se agrega una rama aquí; el pipeline no se toca.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from openai import AsyncOpenAI
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.dominio.composicion import Compositor, RecortadorRembg, RecortadorUmbral
 from app.dominio.costos import Tarifario
+from app.dominio.invitados import TrabajosInvitado
 from app.dominio.moderacion import Moderacion
 from app.dominio.orquestador import Orquestador
 from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision
@@ -55,6 +56,7 @@ class Contenedor:
     hasher: Hasher
     tokens: Tokens
     http: httpx.AsyncClient
+    invitados: TrabajosInvitado = field(default_factory=TrabajosInvitado)
 
     async def cerrar(self) -> None:
         await self.http.aclose()
@@ -230,6 +232,8 @@ def construir(settings: Settings) -> Contenedor:
             settings.jwt_secreto.get_secret_value(),
             settings.jwt_minutos,
             settings.verificacion_horas,
+            settings.invitado_minutos,
         ),
         http=http,
+        invitados=TrabajosInvitado(settings.invitado_retencion_minutos * 60),
     )
