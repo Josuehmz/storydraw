@@ -9,6 +9,8 @@ El repositorio tiene dos partes:
 
 Los prompts con los que se encargó la creación inicial del proyecto están en [`docs/prompts/`](docs/prompts/00-indice.md).
 
+Para que una IA explique el proyecto a quien lo vaya a llevar (qué es, estado, pendientes y mejoras, con lo verificado marcado), ver [`CONTEXTO-IA.md`](CONTEXTO-IA.md).
+
 ## Arquitectura
 
 Sigue los diagramas de arquitectura del proyecto (vista única, componentes UML y despliegue).
