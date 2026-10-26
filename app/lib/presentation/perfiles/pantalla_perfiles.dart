@@ -17,55 +17,13 @@ class PantallaPerfiles extends ConsumerWidget {
   static const _avatares = [Colores.naranja, Colores.violeta, Colores.verde, Colores.azulInfo];
 
   Future<void> _crear(BuildContext context, WidgetRef ref) async {
-    final apodo = TextEditingController();
-    var edad = 8;
-    final crear = await showDialog<bool>(
+    final datos = await showDialog<({String apodo, int edad})>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Nuevo perfil'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                key: const Key('campo-apodo'),
-                controller: apodo,
-                maxLength: 40,
-                decoration: const InputDecoration(
-                  labelText: 'Apodo (no hace falta el nombre real)',
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text('Edad'),
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (var e = 6; e <= 12; e++)
-                    ChoiceChip(
-                      label: Text('$e'),
-                      selected: edad == e,
-                      onSelected: (_) => setState(() => edad = e),
-                    ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Crear')),
-          ],
-        ),
-      ),
+      builder: (_) => const _FormularioPerfil(),
     );
-    if (crear ?? false) {
-      if (apodo.text.trim().isNotEmpty) {
-        await ref
-            .read(cuentasRepositorioProvider)
-            .crearPerfil(apodo: apodo.text.trim(), edad: edad);
-        ref.invalidate(perfilesProvider);
-      }
-    }
-    apodo.dispose();
+    if (datos == null) return;
+    await ref.read(cuentasRepositorioProvider).crearPerfil(apodo: datos.apodo, edad: datos.edad);
+    ref.invalidate(perfilesProvider);
   }
 
   Future<void> _borrar(BuildContext context, WidgetRef ref, Perfil perfil) async {
@@ -89,6 +47,8 @@ class PantallaPerfiles extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final perfiles = ref.watch(perfilesProvider);
+    // Con cero perfiles el botón grande del estado vacío es la única acción: sin botón flotante.
+    final hayPerfiles = perfiles.value?.isNotEmpty ?? false;
     return Scaffold(
       appBar: AppBar(
         title: const Text('¿Quién va a dibujar?'),
@@ -102,11 +62,20 @@ class PantallaPerfiles extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.large(
-        key: const Key('boton-nuevo-perfil'),
-        onPressed: () => _crear(context, ref),
-        child: const Icon(Icons.person_add, size: 40),
-      ),
+      floatingActionButton: hayPerfiles
+          ? SizedBox(
+              height: kToqueMinimo + 8,
+              child: FloatingActionButton.extended(
+                key: const Key('boton-nuevo-perfil'),
+                onPressed: () => _crear(context, ref),
+                icon: const Icon(Icons.person_add, size: 32),
+                label: const Text(
+                  'Nuevo dibujante',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
+            )
+          : null,
       body: Column(
         children: [
           const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: AvisoInvitado()),
@@ -126,35 +95,281 @@ class PantallaPerfiles extends ConsumerWidget {
           onPressed: () => ref.invalidate(perfilesProvider),
         ),
       ),
-      data: (lista) => GridView.count(
-        padding: const EdgeInsets.all(16),
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
+      data: (lista) => lista.isEmpty
+          ? _SinPerfiles(alCrear: () => _crear(context, ref))
+          : GridView.count(
+              // Abajo deja sitio para el botón flotante.
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
+              crossAxisCount: 2,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 0.78,
+              children: [
+                for (final (i, p) in lista.indexed)
+                  _TarjetaPerfil(
+                    perfil: p,
+                    color: _avatares[i % _avatares.length],
+                    alPulsar: () => ref.read(sesionProvider.notifier).elegirPerfil(p),
+                    alMantener: () => _borrar(context, ref, p),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+/// Formulario del adulto. Es dueño de su controlador: se libera cuando el diálogo
+/// termina de cerrarse, no antes (antes fallaba al animar el cierre).
+class _FormularioPerfil extends StatefulWidget {
+  const _FormularioPerfil();
+
+  @override
+  State<_FormularioPerfil> createState() => _FormularioPerfilState();
+}
+
+class _FormularioPerfilState extends State<_FormularioPerfil> {
+  final _apodo = TextEditingController();
+  var _edad = 8;
+
+  @override
+  void dispose() {
+    _apodo.dispose();
+    super.dispose();
+  }
+
+  void _aceptar() {
+    final apodo = _apodo.text.trim();
+    Navigator.pop(context, apodo.isEmpty ? null : (apodo: apodo, edad: _edad));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Nuevo perfil'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (final (i, p) in lista.indexed)
-            InkWell(
-              key: Key('perfil-${p.id}'),
-              borderRadius: BorderRadius.circular(24),
-              onTap: () => ref.read(sesionProvider.notifier).elegirPerfil(p),
-              onLongPress: () => _borrar(context, ref, p),
+          TextField(
+            key: const Key('campo-apodo'),
+            controller: _apodo,
+            maxLength: 40,
+            decoration: const InputDecoration(labelText: 'Apodo (no hace falta el nombre real)'),
+          ),
+          const SizedBox(height: 8),
+          const Text('Edad'),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (var e = 6; e <= 12; e++)
+                ChoiceChip(
+                  label: Text('$e'),
+                  selected: _edad == e,
+                  onSelected: (_) => setState(() => _edad = e),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(onPressed: _aceptar, child: const Text('Crear')),
+      ],
+    );
+  }
+}
+
+/// Estado vacío: se entiende sin leer (dibujo grande + botón con icono). El texto es para el adulto.
+class _SinPerfiles extends StatelessWidget {
+  const _SinPerfiles({required this.alCrear});
+
+  final VoidCallback alCrear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      key: const Key('perfiles-vacio'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _IlustracionDibujante(),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              height: 80,
+              child: ElevatedButton.icon(
+                key: const Key('boton-primer-perfil'),
+                onPressed: alCrear,
+                icon: const Icon(Icons.person_add, size: 36),
+                label: const Text(
+                  'Crear el primer dibujante',
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+                ),
+                style: ElevatedButton.styleFrom(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Adulto: crea un perfil con el apodo y la edad del niño. '
+              'Después, al tocar su tarjeta se abre el lienzo para dibujar.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: Colores.texto),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Carita grande en azul de la marca con un lápiz naranja y un «+»: «aquí falta alguien que dibuje».
+class _IlustracionDibujante extends StatelessWidget {
+  const _IlustracionDibujante();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      height: 220,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 220,
+            height: 220,
+            decoration: BoxDecoration(
+              color: Colores.azul.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+          ),
+          Container(
+            width: 156,
+            height: 156,
+            decoration: const BoxDecoration(color: Colores.azul, shape: BoxShape.circle),
+            child: const Icon(Icons.face, color: Colores.crema, size: 112),
+          ),
+          Positioned(
+            right: 8,
+            bottom: 16,
+            child: Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: Colores.naranja,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colores.crema, width: 5),
+              ),
+              child: const Icon(Icons.brush, color: Colors.white, size: 40),
+            ),
+          ),
+          Positioned(
+            left: 10,
+            top: 14,
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: Colores.naranja,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colores.crema, width: 5),
+              ),
+              child: const Icon(Icons.add, color: Colors.white, size: 38),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta grande de un perfil: el lápiz naranja dice «toca aquí para dibujar».
+class _TarjetaPerfil extends StatelessWidget {
+  const _TarjetaPerfil({
+    required this.perfil,
+    required this.color,
+    required this.alPulsar,
+    required this.alMantener,
+  });
+
+  final Perfil perfil;
+  final Color color;
+  final VoidCallback alPulsar;
+  final VoidCallback alMantener;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Dibujar como ${perfil.apodo}',
+      child: Material(
+        color: Colors.white,
+        elevation: 3,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          key: Key('perfil-${perfil.id}'),
+          borderRadius: BorderRadius.circular(28),
+          onTap: alPulsar,
+          onLongPress: alMantener,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            // Con letra grande o pantalla estrecha se encoge en vez de desbordarse.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(
-                    radius: 52,
-                    backgroundColor: _avatares[i % _avatares.length],
+                    radius: 50,
+                    backgroundColor: color,
                     child: Text(
-                      p.apodo.characters.first.toUpperCase(),
+                      perfil.apodo.characters.first.toUpperCase(),
                       style: const TextStyle(fontSize: 44, color: Colors.white),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(p.apodo, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  // Un apodo largo se corta en vez de encoger toda la tarjeta.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 150),
+                    child: Text(
+                      perfil.apodo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    key: Key('perfil-${perfil.id}-dibujar'),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colores.naranja,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.brush, color: Colors.white, size: 28),
+                        SizedBox(width: 6),
+                        Text(
+                          'Dibujar',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }

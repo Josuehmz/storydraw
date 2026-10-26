@@ -55,8 +55,9 @@ void main() {
 
     expect(http.peticiones.single.path, '/v1/invitado');
     expect(sesion.invitado, isTrue);
-    // Pantalla de perfiles (locales) con el aviso del modo invitado
-    expect(find.byKey(const Key('boton-nuevo-perfil')), findsOneWidget);
+    // Pantalla de perfiles (locales) vacía, con su botón grande y el aviso del modo invitado
+    expect(find.byKey(const Key('perfiles-vacio')), findsOneWidget);
+    expect(find.byKey(const Key('boton-primer-perfil')), findsOneWidget);
     expect(find.byKey(const Key('aviso-invitado')), findsOneWidget);
     expect(find.text(textoAvisoInvitado), findsOneWidget);
   });
