@@ -1,5 +1,6 @@
 """Dibujos y cuentos: identificación asistida, creación, consulta, medios y borrado."""
 
+import asyncio
 import uuid
 
 from fastapi import (
@@ -35,7 +36,8 @@ async def _leer_dibujo(c: Contenedor, archivo: UploadFile) -> bytes:
     if len(datos) > maximo:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "dibujo_demasiado_grande")
     try:
-        return abrir_dibujo(datos)
+        # Pillow con un dibujo grande tarda: en un hilo, para no frenar otras peticiones.
+        return await asyncio.to_thread(abrir_dibujo, datos)
     except DibujoInvalido as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "dibujo_invalido") from exc
 

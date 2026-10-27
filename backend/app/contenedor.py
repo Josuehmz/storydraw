@@ -67,6 +67,21 @@ def _secreto(valor) -> str:
     return valor.get_secret_value() if valor is not None else ""
 
 
+TIEMPO_MAXIMO_CUENTO_S = 180.0
+
+
+def _tiempo_maximo_cuento(settings: Settings) -> float | None:
+    """Tope del cuento entero. Con Ollama por CPU no hay tope automático."""
+    if settings.tiempo_maximo_cuento_s is not None:
+        return settings.tiempo_maximo_cuento_s
+    proveedores = (
+        settings.proveedor_vision,
+        settings.proveedor_texto,
+        settings.proveedor_moderacion,
+    )
+    return None if "ollama" in proveedores else TIEMPO_MAXIMO_CUENTO_S
+
+
 def construir(settings: Settings) -> Contenedor:
     http = httpx.AsyncClient(timeout=settings.timeout_proveedor_s)
     openai_cliente: AsyncOpenAI | None = None
@@ -214,6 +229,7 @@ def construir(settings: Settings) -> Contenedor:
         espera_base_s=settings.espera_reintento_s,
         max_regeneraciones=settings.max_regeneraciones,
         timeout_s=settings.timeout_proveedor_s,
+        tiempo_maximo_s=_tiempo_maximo_cuento(settings),
     )
     motor = crear_motor(settings.database_url)
     return Contenedor(
