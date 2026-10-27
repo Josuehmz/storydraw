@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:storydraw/core/config.dart';
+import 'package:storydraw/core/errores.dart';
 import 'package:storydraw/core/http.dart';
 import 'package:storydraw/data/cache_cuentos.dart';
 import 'package:storydraw/data/repositorios_invitado.dart';
@@ -127,6 +128,24 @@ void main() {
     final cuento = await cuentos.esperar('g2');
     expect(cuento.estado, EstadoCuento.rechazado);
     expect(cache.contiene('g2'), isFalse);
+  });
+
+  test('si el cuento no llega en la espera máxima, deja de consultar y da un error', () async {
+    const corta = AppConfig(
+      apiUrl: 'http://backend.prueba',
+      intervaloConsulta: Duration(milliseconds: 10),
+      esperaMaxima: Duration(milliseconds: 50),
+      modoInvitado: true,
+    );
+    final dio = crearDio(corta, token: () => sesion.token)..httpClientAdapter = http;
+    final repo = CuentosRepositorioInvitado(dio, cache, corta, sesion, cuentas);
+    http.manejar = (o) => respuestaJson(cuentoInvitado('g3', 'en_proceso'));
+    await expectLater(
+      repo.esperar('g3'),
+      throwsA(isA<ErrorApi>().having((e) => e.tipo, 'tipo', TipoError.servidor)),
+    );
+    expect(http.peticiones.length, lessThanOrEqualTo(6));
+    expect(cache.contiene('g3'), isFalse);
   });
 
   test('si el token de invitado venció, pide otro y repite', () async {

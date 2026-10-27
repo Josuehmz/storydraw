@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../core/config.dart';
+import '../core/consulta.dart';
 import '../core/errores.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -166,25 +167,19 @@ class CuentosRepositorioInvitado implements CuentosRepositorio {
   @override
   Future<Cuento> esperar(String cuentoId) => _conToken(() async {
     final perfilId = _perfilDe[cuentoId] ?? _sesion.perfilId ?? '';
-    final limite = DateTime.now().add(_config.esperaMaxima);
-    while (true) {
-      final r = await _dio.get<Map<String, dynamic>>('/v1/invitado/cuentos/$cuentoId');
-      final cuento = _desdeServidor(r.data!, perfilId);
-      if (cuento.estado == EstadoCuento.listo) {
-        // El servidor ya lo olvidó: desde aquí solo existe en este dispositivo.
-        await _cache.guardar(cuento);
-        _perfilDe.remove(cuentoId);
-        return cuento;
-      }
-      if (cuento.estado != EstadoCuento.enProceso) {
-        _perfilDe.remove(cuentoId);
-        return cuento;
-      }
-      if (DateTime.now().isAfter(limite)) {
-        throw TimeoutException('El cuento tarda más de lo esperado');
-      }
-      await Future<void>.delayed(_config.intervaloConsulta);
-    }
+    final cuento = await consultarCadaIntervalo(
+      consultar: () async {
+        final r = await _dio.get<Map<String, dynamic>>('/v1/invitado/cuentos/$cuentoId');
+        return _desdeServidor(r.data!, perfilId);
+      },
+      enProceso: (c) => c.estado == EstadoCuento.enProceso,
+      intervalo: _config.intervaloConsulta,
+      esperaMaxima: _config.esperaMaxima,
+    );
+    // Listo: el servidor ya lo olvidó; desde aquí solo existe en este dispositivo.
+    if (cuento.estado == EstadoCuento.listo) await _cache.guardar(cuento);
+    _perfilDe.remove(cuentoId);
+    return cuento;
   });
 
   @override

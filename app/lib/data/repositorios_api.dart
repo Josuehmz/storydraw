@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../core/config.dart';
+import '../core/consulta.dart';
 import '../core/errores.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -144,16 +145,14 @@ class CuentosRepositorioApi implements CuentosRepositorio {
 
   @override
   Future<Cuento> esperar(String cuentoId) => _envolver(() async {
-    final limite = DateTime.now().add(_config.esperaMaxima);
-    while (true) {
-      final cuento = await _consultar(cuentoId);
-      if (cuento.estado == EstadoCuento.listo) return _descargar(cuento);
-      if (cuento.estado != EstadoCuento.enProceso) return cuento;
-      if (DateTime.now().isAfter(limite)) {
-        throw TimeoutException('El cuento tarda más de lo esperado');
-      }
-      await Future<void>.delayed(_config.intervaloConsulta);
-    }
+    final cuento = await consultarCadaIntervalo(
+      consultar: () => _consultar(cuentoId),
+      enProceso: (c) => c.estado == EstadoCuento.enProceso,
+      intervalo: _config.intervaloConsulta,
+      esperaMaxima: _config.esperaMaxima,
+    );
+    if (cuento.estado == EstadoCuento.listo) return _descargar(cuento);
+    return cuento;
   });
 
   @override

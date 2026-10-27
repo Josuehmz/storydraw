@@ -147,6 +147,22 @@ void main() {
     expect(cache.contiene('c3'), isFalse);
   });
 
+  test('si el cuento no llega en la espera máxima, deja de consultar y da un error', () async {
+    const corta = AppConfig(
+      apiUrl: 'http://backend.prueba',
+      intervaloConsulta: Duration(milliseconds: 10),
+      esperaMaxima: Duration(milliseconds: 50),
+    );
+    final repoCorto = CuentosRepositorioApi(dio, cache, corta);
+    http.manejar = (o) => json(cuentoJson('c4', 'en_proceso'));
+    await expectLater(
+      repoCorto.esperar('c4'),
+      throwsA(isA<ErrorApi>().having((e) => e.tipo, 'tipo', TipoError.servidor)),
+    );
+    expect(http.peticiones.length, lessThanOrEqualTo(6));
+    expect(cache.contiene('c4'), isFalse);
+  });
+
   test('sin conexión, la biblioteca se relee desde Hive', () async {
     http.manejar = (o) {
       if (o.path == '/v1/cuentos/c1') return json(cuentoJson('c1', 'listo'));

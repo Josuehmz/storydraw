@@ -10,8 +10,9 @@ class AppConfig {
   const AppConfig({
     required this.apiUrl,
     this.timeout = const Duration(seconds: 90),
-    this.intervaloConsulta = const Duration(seconds: 2),
-    this.esperaMaxima = const Duration(minutes: 3),
+    this.intervaloConsulta = const Duration(seconds: 3),
+    this.esperaMaxima = const Duration(minutes: 4),
+    this.avisoDemora = const Duration(seconds: 60),
     this.reintentosHttp = 2,
     this.modoInvitado = false,
   });
@@ -34,8 +35,12 @@ class AppConfig {
   /// Cada cuánto se consulta el estado del cuento durante el momento mágico.
   final Duration intervaloConsulta;
 
-  /// Tiempo máximo de espera de un cuento antes de ofrecer reintentar.
+  /// Tiempo máximo de espera de un cuento antes de ofrecer reintentar. Es mayor que el
+  /// tope del cuento en el backend (180 s), para que el servidor falle limpio primero.
   final Duration esperaMaxima;
+
+  /// Desde cuándo el momento mágico avisa que está tardando más de lo normal.
+  final Duration avisoDemora;
 
   final int reintentosHttp;
 }
