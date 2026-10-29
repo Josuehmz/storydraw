@@ -1,5 +1,7 @@
 # StoryDraw
 
+fix
+
 StoryDraw convierte el dibujo de un niño de 6 a 12 años en un cuento ilustrado de tres páginas. Por ahora el cuento sale **sin narración**: se lee en pantalla, sin audio. El dibujo del niño no se reinterpreta con IA: se recorta y se monta encima de un fondo generado para cada página, así que el protagonista es siempre su dibujo.
 
 El repositorio tiene dos partes:
