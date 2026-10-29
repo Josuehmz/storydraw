@@ -178,7 +178,10 @@ class _FormularioPerfilState extends State<_FormularioPerfil> {
               controller: _apodo,
               maxLength: 40,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Apodo (no hace falta el nombre real)'),
+              decoration: const InputDecoration(
+                labelText: 'Apodo',
+                helperText: 'No hace falta el nombre real',
+              ),
             ),
             const SizedBox(height: 8),
             Text('Edad', style: Tipos.subtitulo.copyWith(fontSize: 18)),
