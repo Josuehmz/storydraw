@@ -7,7 +7,7 @@ import uuid
 
 from app.api.esquemas import CuentoResumen, CuentoSalida, PaginaSalida
 from app.contenedor import Contenedor
-from app.dominio.orquestador import ResultadoCuento
+from app.dominio.orquestador import ResultadoCuento, medir
 from app.infra.orm import Cuento
 from app.infra.repositorio import Repositorio
 
@@ -53,20 +53,28 @@ def a_resumen(cuento: Cuento) -> CuentoResumen:
 
 
 async def procesar_cuento(
-    c: Contenedor, cuento_id: uuid.UUID, dibujo_png: bytes, personaje: str | None, edad: int
+    c: Contenedor,
+    cuento_id: uuid.UUID,
+    dibujo_png: bytes,
+    personaje: str | None,
+    edad: int,
+    nombre: str | None = None,
 ) -> None:
     """Tarea en segundo plano. El dibujo solo vive en esta llamada, en memoria."""
+    cid = str(cuento_id)
     try:
-        resultado = await c.orquestador.crear_cuento(str(cuento_id), dibujo_png, personaje, edad)
+        resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad, nombre)
     except Exception:
         log.exception("cuento=%s fallo inesperado del orquestador", cuento_id)
         resultado = ResultadoCuento(estado="fallido")
     finally:
         del dibujo_png
     if resultado.estado != "listo":
-        await c.almacen.borrar_prefijo(f"cuentos/{cuento_id}/")
-    async with c.fabrica() as s:
-        await Repositorio(s).guardar_resultado(cuento_id, resultado)
+        with medir(cid, "borrar_almacen"):
+            await c.almacen.borrar_prefijo(f"cuentos/{cuento_id}/")
+    with medir(cid, "entregar"):
+        async with c.fabrica() as s:
+            await Repositorio(s).guardar_resultado(cuento_id, resultado)
     log.info(
         "cuento=%s estado=%s latencia_ms=%d costo_usd=%.5f avisos=%s",
         cuento_id,
@@ -80,3 +88,43 @@ async def procesar_cuento(
 async def borrar_cuentos(c: Contenedor, ids: list[uuid.UUID]) -> None:
     for cuento_id in ids:
         await c.almacen.borrar_prefijo(f"cuentos/{cuento_id}/")
+
+
+async def procesar_cuento_invitado(
+    c: Contenedor,
+    trabajo_id: uuid.UUID,
+    dibujo_png: bytes,
+    personaje: str | None,
+    edad: int,
+    nombre: str | None = None,
+) -> None:
+    """Como `procesar_cuento`, pero sin base de datos: el resultado (con las páginas en
+    memoria) espera a que la app lo recoja y el almacén se vacía al terminar. La
+    moderación es la misma del orquestador: nada sin moderar llega al invitado."""
+    prefijo = f"cuentos/{trabajo_id}/"
+    cid = str(trabajo_id)
+    imagenes: dict[int, bytes] = {}
+    try:
+        resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad, nombre)
+        if resultado.estado == "listo":
+            with medir(cid, "leer_almacen"):
+                for pagina in resultado.paginas:
+                    imagenes[pagina.numero] = await c.almacen.leer(pagina.imagen_clave)
+    except Exception:
+        log.exception("invitado cuento=%s fallo inesperado", trabajo_id)
+        resultado = ResultadoCuento(estado="fallido")
+        imagenes = {}
+    finally:
+        del dibujo_png
+        with medir(cid, "borrar_almacen"):
+            await c.almacen.borrar_prefijo(prefijo)
+    with medir(cid, "entregar"):
+        c.invitados.terminar(trabajo_id, resultado, imagenes)
+    log.info(
+        "invitado cuento=%s estado=%s latencia_ms=%d costo_usd=%.5f avisos=%s",
+        trabajo_id,
+        resultado.estado,
+        resultado.latencia_ms,
+        resultado.costo_usd,
+        ",".join(resultado.avisos),
+    )

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../core/config.dart';
+import '../core/consulta.dart';
 import '../core/errores.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -108,18 +109,23 @@ class CuentosRepositorioApi implements CuentosRepositorio {
   });
 
   @override
-  Future<String> crear({required String perfilId, required Uint8List dibujo, String? personaje}) =>
-      _envolver(() async {
-        final r = await _dio.post<Map<String, dynamic>>(
-          '/v1/cuentos',
-          data: FormData.fromMap({
-            'dibujo': _archivo(dibujo),
-            'perfil_id': perfilId,
-            if (personaje != null && personaje.trim().isNotEmpty) 'personaje': personaje.trim(),
-          }),
-        );
-        return r.data!['id'] as String;
-      });
+  Future<String> crear({
+    required String perfilId,
+    required Uint8List dibujo,
+    String? personaje,
+    String? nombre,
+  }) => _envolver(() async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/v1/cuentos',
+      data: FormData.fromMap({
+        'dibujo': _archivo(dibujo),
+        'perfil_id': perfilId,
+        if (personaje != null && personaje.trim().isNotEmpty) 'personaje': personaje.trim(),
+        if (nombre != null && nombre.trim().isNotEmpty) 'nombre': nombre.trim(),
+      }),
+    );
+    return r.data!['id'] as String;
+  });
 
   Future<Cuento> _consultar(String id) async {
     final r = await _dio.get<Map<String, dynamic>>('/v1/cuentos/$id');
@@ -144,16 +150,14 @@ class CuentosRepositorioApi implements CuentosRepositorio {
 
   @override
   Future<Cuento> esperar(String cuentoId) => _envolver(() async {
-    final limite = DateTime.now().add(_config.esperaMaxima);
-    while (true) {
-      final cuento = await _consultar(cuentoId);
-      if (cuento.estado == EstadoCuento.listo) return _descargar(cuento);
-      if (cuento.estado != EstadoCuento.enProceso) return cuento;
-      if (DateTime.now().isAfter(limite)) {
-        throw TimeoutException('El cuento tarda más de lo esperado');
-      }
-      await Future<void>.delayed(_config.intervaloConsulta);
-    }
+    final cuento = await consultarCadaIntervalo(
+      consultar: () => _consultar(cuentoId),
+      enProceso: (c) => c.estado == EstadoCuento.enProceso,
+      intervalo: _config.intervaloConsulta,
+      esperaMaxima: _config.esperaMaxima,
+    );
+    if (cuento.estado == EstadoCuento.listo) return _descargar(cuento);
+    return cuento;
   });
 
   @override

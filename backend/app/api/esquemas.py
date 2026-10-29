@@ -97,6 +97,23 @@ class CuentoResumen(BaseModel):
     creado_en: datetime
 
 
+class PaginaInvitado(BaseModel):
+    numero: int
+    texto: str
+    imagen_png_base64: str
+
+
+class CuentoInvitadoSalida(BaseModel):
+    """El cuento del invitado viaja entero (texto e imágenes) y el servidor lo olvida."""
+
+    id: uuid.UUID
+    estado: Literal["en_proceso", "listo", "rechazado", "fallido"]
+    titulo: str | None = None
+    personaje: str | None = None
+    avisos: list[str] = []
+    paginas: list[PaginaInvitado] = []
+
+
 class PasoMetrica(BaseModel):
     paso: str
     proveedor: str

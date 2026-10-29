@@ -16,7 +16,38 @@ class StoryDrawApp extends StatelessWidget {
       title: 'StoryDraw',
       debugShowCheckedModeBanner: false,
       theme: construirTema(),
+      builder: (context, child) => _ColumnaCentrada(child: child!),
       home: const _Inicio(),
+    );
+  }
+}
+
+/// Ancho máximo de la app. En una pantalla ancha (la versión web en un computador) la app
+/// se ve como en el celular: una columna centrada, sin estirar el lienzo ni las tarjetas.
+const double kAnchoMaximo = 560;
+
+class _ColumnaCentrada extends StatelessWidget {
+  const _ColumnaCentrada({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    if (media.size.width <= kAnchoMaximo) return child;
+    return ColoredBox(
+      color: Colores.azul.withValues(alpha: 0.08),
+      child: Center(
+        child: Container(
+          width: kAnchoMaximo,
+          decoration: BoxDecoration(color: Colores.crema, boxShadow: sombraSuave()),
+          // Las pantallas miden el ancho con MediaQuery: que vean el de la columna.
+          child: MediaQuery(
+            data: media.copyWith(size: Size(kAnchoMaximo, media.size.height)),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }

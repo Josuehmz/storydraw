@@ -133,3 +133,10 @@ def test_regla_de_escenas_ambiente_segun_el_dibujo_y_estilo_coherente():
     assert "en una ciudad con calles y edificios" in mensaje
     assert "mostrar lo que cuenta el texto de esa página" in mensaje
     assert "misma paleta de colores entre páginas" in mensaje
+
+
+def test_nombre_del_personaje_va_al_prompt_del_cuento():
+    con = mensaje_solicitud(SolicitudCuento("un perro", 7, nombre="Rayo"))
+    assert "se llama «Rayo»" in con
+    sin = mensaje_solicitud(SolicitudCuento("un perro", 7))
+    assert "«" not in sin.split("7. ")[1]

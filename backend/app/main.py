@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from app.api import limites
-from app.api.rutas import auth, cuentos, operacion, perfiles
+from app.api.rutas import auth, cuentos, invitado, operacion, perfiles
 from app.config import Settings, obtener_settings
 from app.contenedor import Contenedor, construir
 from app.infra.adaptadores.almacen import AlmacenS3
@@ -28,6 +28,7 @@ def create_app(settings: Settings | None = None, contenedor: Contenedor | None =
         settings.limite_identificar,
         settings.limite_cuentos_ip,
         settings.limite_cuentos_cuenta,
+        settings.limite_invitado_ip,
     )
 
     @asynccontextmanager
@@ -66,6 +67,10 @@ def create_app(settings: Settings | None = None, contenedor: Contenedor | None =
     app.include_router(perfiles.router)
     app.include_router(cuentos.router)
     app.include_router(operacion.router)
+    if settings.permitir_invitados:
+        # Solo pruebas locales; la configuración lo prohíbe en producción.
+        log.warning("Modo invitado ACTIVO: cuentos sin cuenta ni consentimiento (solo local)")
+        app.include_router(invitado.router)
 
     @app.get("/salud", tags=["salud"])
     async def salud() -> dict:
