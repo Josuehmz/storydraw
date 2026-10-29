@@ -32,12 +32,21 @@ final cuentasRepositorioProvider = Provider<CuentasRepositorio>((ref) {
   if (ref.watch(sesionProvider.select((s) => s.invitado))) {
     return ref.watch(cuentasInvitadoProvider);
   }
-  return CuentasRepositorioApi(
+  return ref.watch(cuentasApiProvider);
+});
+
+/// Cuentas con el backend, sin depender de la sesión. `SesionNotifier` usa este
+/// (y `cuentasInvitadoProvider`) en vez de `cuentasRepositorioProvider`: ese depende
+/// de `sesionProvider`, y Riverpod 3 lanza `CircularDependencyError` si el notifier
+/// lee un provider que depende de él (así fallaban «Cerrar sesión» y «Salir del modo
+/// invitado»).
+final cuentasApiProvider = Provider<CuentasRepositorioApi>(
+  (ref) => CuentasRepositorioApi(
     ref.watch(dioProvider),
     ref.watch(sesionLocalProvider),
     ref.watch(cacheProvider),
-  );
-});
+  ),
+);
 
 final cuentosRepositorioProvider = Provider<CuentosRepositorio>((ref) {
   if (ref.watch(sesionProvider.select((s) => s.invitado))) {
@@ -94,7 +103,7 @@ class SesionNotifier extends Notifier<EstadoSesion> {
   }
 
   Future<void> iniciar(String email, String contrasena) async {
-    await ref.read(cuentasRepositorioProvider).iniciarSesion(email: email, contrasena: contrasena);
+    await ref.read(cuentasApiProvider).iniciarSesion(email: email, contrasena: contrasena);
     state = const EstadoSesion(autenticado: true);
   }
 
@@ -115,7 +124,10 @@ class SesionNotifier extends Notifier<EstadoSesion> {
   }
 
   Future<void> cerrar() async {
-    await ref.read(cuentasRepositorioProvider).cerrarSesion();
+    final CuentasRepositorio cuentas = state.invitado
+        ? ref.read(cuentasInvitadoProvider)
+        : ref.read(cuentasApiProvider);
+    await cuentas.cerrarSesion();
     state = const EstadoSesion(autenticado: false);
   }
 }
