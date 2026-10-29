@@ -123,6 +123,7 @@ class Pagina(Base):
     numero: Mapped[int] = mapped_column(SmallInteger)
     texto: Mapped[str] = mapped_column(Text)
     imagen_clave: Mapped[str] = mapped_column(String(255))
+    audio_clave: Mapped[str | None] = mapped_column(String(255))
 
     cuento: Mapped[Cuento] = relationship(back_populates="paginas")
 

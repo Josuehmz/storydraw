@@ -1,15 +1,16 @@
-"""Orquestador del pipeline: asyncio, cuatro pasos, reintento por paso y degradación.
+"""Orquestador del pipeline: asyncio, cinco pasos, reintento por paso y degradación.
 
 Pasos: 1 identificar (visión, opcional) · 2 escribir (texto) · 3 moderar (obligatorio) ·
-4 escenarios (imagen). Después, la composición monta las páginas y las sube al almacén.
-El cuento sale sin narración: se lee en pantalla.
+4 escenarios (imagen) · 5 narrar (voz). Los pasos 4 y 5 corren en paralelo. Después, la
+composición monta las páginas y las sube al almacén.
 
 - Cada paso se reintenta por separado; un fallo no rehace el cuento entero.
 - La visión da el personaje (si el niño no lo dijo) y los rasgos del dibujo (colores,
   elementos, emoción), que viajan al paso del cuento para que no invente otros.
 - Sin visión, se usa lo que el niño escribió (o un personaje genérico) y no hay rasgos.
 - Un cuento con menos de 3 páginas no se entrega: cuenta como intento fallido del paso.
-- Sin imagen, se usa un fondo del banco y el cuento sale con aviso.
+- Sin imagen, se usa un fondo del banco y el cuento sale con aviso. Si la voz falla, el cuento
+  se entrega escrito, con aviso (apagada no avisa). La voz solo lee texto que ya pasó la moderación.
 - Una capacidad apagada (`PROVEEDOR_*=ninguno`) no se llama ni se reintenta.
 - Sin cuento o sin moderación aprobada, no hay nada que mostrar: el niño no ve nada.
 """
@@ -34,6 +35,7 @@ from app.dominio.puertos import (
     IImagen,
     ITexto,
     IVision,
+    IVoz,
     SolicitudCuento,
     Uso,
 )
@@ -43,6 +45,7 @@ T = TypeVar("T")
 
 PERSONAJE_GENERICO = "un amigo mágico"
 AVISO_SIN_ESCENARIOS = "sin_escenarios"
+AVISO_SIN_NARRACION = "sin_narracion"
 AVISO_SIN_IDENTIFICACION = "sin_identificacion"
 
 PAGINAS = 3
@@ -93,6 +96,7 @@ class PaginaFinal:
     numero: int
     texto: str
     imagen_clave: str
+    audio_clave: str | None = None
 
 
 @dataclass
@@ -123,6 +127,10 @@ def clave_imagen(cuento_id: str, numero: int) -> str:
     return f"cuentos/{cuento_id}/paginas/{numero}.png"
 
 
+def clave_audio(cuento_id: str, numero: int) -> str:
+    return f"cuentos/{cuento_id}/audio/{numero}.mp3"
+
+
 class Orquestador:
     def __init__(
         self,
@@ -130,6 +138,7 @@ class Orquestador:
         vision: IVision,
         texto: ITexto,
         imagen: IImagen,
+        voz: IVoz,
         moderacion: Moderacion,
         compositor: Compositor,
         almacen: IAlmacen,
@@ -142,6 +151,7 @@ class Orquestador:
         self.vision = vision
         self.texto = texto
         self.imagen = imagen
+        self.voz = voz
         self.moderacion = moderacion
         self.compositor = compositor
         self.almacen = almacen
@@ -319,12 +329,20 @@ class Orquestador:
         paginas = cuento.paginas[:PAGINAS]
         resultado.titulo = cuento.titulo.strip()[:200]
 
-        # Paso 4 · escenarios
+        # Pasos 4 y 5 · escenarios y narración en paralelo; ninguno bloquea al otro.
+        # La voz lee el texto ya moderado: nunca se narra (ni se paga) algo no aprobado.
         m_escenarios = MetricaPaso("escenarios", self.imagen.proveedor)
-        resultado.pasos.append(m_escenarios)
-        fondos = await self._escenarios(m_escenarios, [p.escena for p in paginas])
+        m_narrar = MetricaPaso("narrar", self.voz.proveedor)
+        resultado.pasos += [m_escenarios, m_narrar]
+        fondos, audios = await asyncio.gather(
+            self._escenarios(m_escenarios, [p.escena for p in paginas]),
+            self.narrar([p.texto for p in paginas], m_narrar),
+        )
         if m_escenarios.estado in ("degradado", "omitido"):
             resultado.avisos.append(AVISO_SIN_ESCENARIOS)
+        # Con la voz apagada (`ninguno`) no hay aviso: es el estado normal. Solo si falló.
+        if m_narrar.estado == "degradado":
+            resultado.avisos.append(AVISO_SIN_NARRACION)
 
         # Composición y subida al almacén
         recorte = await recorte_tarea
@@ -332,8 +350,41 @@ class Orquestador:
             png = await asyncio.to_thread(self.compositor.componer, fondos[i - 1], recorte, i)
             clave = clave_imagen(cuento_id, i)
             await self.almacen.guardar(clave, png, "image/png")
-            resultado.paginas.append(PaginaFinal(i, pagina.texto.strip(), clave))
+            audio_clave = None
+            if audios[i - 1] is not None:
+                audio_clave = clave_audio(cuento_id, i)
+                await self.almacen.guardar(audio_clave, audios[i - 1], "audio/mpeg")
+            resultado.paginas.append(PaginaFinal(i, pagina.texto.strip(), clave, audio_clave))
         resultado.estado = "listo"
+
+    async def narrar(
+        self, textos: list[str], metrica: MetricaPaso | None = None
+    ) -> list[bytes | None]:
+        """Paso 5: un audio por página. Si una falla, esa página queda sin audio."""
+        metrica = metrica or MetricaPaso("narrar", self.voz.proveedor)
+        if not self.voz.disponible:
+            # Capacidad apagada: cuento escrito, sin llamar ni reintentar.
+            metrica.estado = "omitido"
+            return [None] * len(textos)
+        inicio = time.perf_counter()
+
+        async def uno(texto: str) -> bytes | None:
+            try:
+                res = await self._con_reintentos(
+                    metrica,
+                    "voz",
+                    lambda: self.voz.narrar(texto),
+                    lambda r: r.uso,
+                    self.voz.timeout_s,
+                )
+                return res.mp3
+            except FalloPaso:
+                metrica.estado = "degradado"
+                return None
+
+        audios = list(await asyncio.gather(*(uno(t) for t in textos)))
+        metrica.latencia_ms = int((time.perf_counter() - inicio) * 1000)  # tiempo de pared
+        return audios
 
     async def _escribir_completo(self, solicitud: SolicitudCuento) -> CuentoTexto:
         """Un cuento con menos páginas de las pedidas cuenta como intento fallido."""

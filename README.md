@@ -1,6 +1,6 @@
 # StoryDraw
 
-StoryDraw convierte el dibujo de un niño de 6 a 12 años en un cuento ilustrado de tres páginas. Por ahora el cuento sale **sin narración**: se lee en pantalla, sin audio. El dibujo del niño no se reinterpreta con IA: se recorta y se monta encima de un fondo generado para cada página, así que el protagonista es siempre su dibujo.
+StoryDraw convierte el dibujo de un niño de 6 a 12 años en un cuento ilustrado de tres páginas. El cuento se lee en pantalla y, si la voz está activada (`PROVEEDOR_VOZ=cloudflare`), cada página se puede **escuchar** con un botón de altavoz, en español latino. El dibujo del niño no se reinterpreta con IA: se recorta y se monta encima de un fondo generado para cada página, así que el protagonista es siempre su dibujo.
 
 El repositorio tiene dos partes:
 
@@ -49,7 +49,7 @@ Los modelos de OpenAI se comprobaron en su documentación oficial el 2026-10-18.
 
 Cada adaptador real tiene un gemelo **falso** (`PROVEEDOR_*=falso`, `ALMACEN=memoria`) que funciona sin red ni claves. Sirve para las pruebas y para desarrollar en local. Con `ENTORNO=produccion` la configuración rechaza los falsos.
 
-### El pipeline: cuatro pasos con reintento y degradación
+### El pipeline: cinco pasos con reintento y degradación
 
 `POST /v1/cuentos` responde `202` al instante y encola el trabajo; el orquestador (asyncio) corre:
 
@@ -58,7 +58,9 @@ Cada adaptador real tiene un gemelo **falso** (`PROVEEDOR_*=falso`, `ALMACEN=mem
 3. **Moderar** (obligatorio). Primero un filtro local por palabras y luego el proveedor. Revisa la entrada del niño y el cuento. Si rechaza, se regenera hasta `MAX_REGENERACIONES` veces sin mostrar lo rechazado. Si el proveedor de moderación cae, el cuento **no** se muestra (falla cerrada). No hay ninguna variable que la desactive.
 4. **Escenarios** (imagen), uno por página, con estilo de libro de cuentos en **lápices de colores y crayón** (trazo a mano, 2D, nada fotorrealista; el prompt es `prompt_fondo` en `comun.py` y lo usan todos los proveedores de imagen). Si falla, se usa un fondo del banco, dibujado con Pillow (aviso `sin_escenarios`). Con `PROVEEDOR_IMAGEN=ninguno` el paso queda `omitido`: no se llama ni se reintenta.
 
-No hay paso de narración: el cuento sale sin audio. Cada paso se reintenta por separado (`REINTENTOS_POR_PASO`) con espera exponencial. Después, la **composición** (Pillow 11 + rembg, sin IA externa) recorta el dibujo y lo monta sobre cada fondo; las páginas se suben al almacén S3.
+5. **Narrar** (voz, opcional), en paralelo con los escenarios y **solo sobre el texto ya moderado**: un audio MP3 por página (`PROVEEDOR_VOZ=cloudflare`, MeloTTS en español, gratis dentro de las neuronas del día; devuelve WAV y el backend lo pasa a MP3 de 48 kbps con `lameenc`). Con `PROVEEDOR_VOZ=ninguno` (lo que pasa si queda vacío) el paso se omite sin avisar. Si la voz estaba activada y falla, el cuento sale escrito con el aviso `sin_narracion`, y solo pierden el audio las páginas que fallaron. Cada audio se sirve en `GET /v1/cuentos/{id}/paginas/{n}/audio` y se borra con el cuento.
+
+Cada paso se reintenta por separado (`REINTENTOS_POR_PASO`) con espera exponencial. Después, la **composición** (Pillow 11 + rembg, sin IA externa) recorta el dibujo y lo monta sobre cada fondo; las páginas se suben al almacén S3.
 
 Cada paso registra intentos, latencia y costo en USD (lo calcula el adaptador; si no, las tarifas `PRECIO_*`). El panel de operación los expone por cuento.
 
@@ -92,7 +94,7 @@ Cada paso registra intentos, latencia y costo en USD (lo calcula el adaptador; s
 
 | Capa | Dónde | Qué hace |
 |---|---|---|
-| Presentación | `app/lib/presentation/` | Lienzo (perfect_freehand), identificación asistida, momento mágico, visor del cuento (texto e imagen, sin audio), biblioteca, acceso del adulto y perfiles. |
+| Presentación | `app/lib/presentation/` | Lienzo (perfect_freehand), identificación asistida, momento mágico, visor del cuento (texto, imagen y botón de escuchar la página actual), biblioteca, acceso del adulto y perfiles. |
 | Aplicación | `app/lib/application/` | Estado y casos de uso con Riverpod (proveedores escritos a mano, sin build_runner). |
 | Dominio | `app/lib/domain/` | Entidades y contratos de repositorio. |
 | Datos | `app/lib/data/` | Dio, caché de cuentos en Hive, sesión en SharedPreferences. |
@@ -127,7 +129,7 @@ cp .env.example .env      # POSTGRES_*, S3_ACCESS_KEY/S3_SECRET_KEY y JWT_SECRET
 docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build -d
 ```
 
-Qué esperar: el cuento sale con fondos del banco (aviso `sin_escenarios`) y sin audio. Si la visión falla, la identificación devuelve `disponible: false` y la app pasa al campo libre (identificación asistida). Por CPU, cada llamada al modelo tarda minutos; el panel `GET /v1/operacion/cuentos` muestra la latencia de cada paso.
+Qué esperar: el cuento sale con fondos del banco (aviso `sin_escenarios`) y sin audio (Ollama no tiene voz). Si la visión falla, la identificación devuelve `disponible: false` y la app pasa al campo libre (identificación asistida). Por CPU, cada llamada al modelo tarda minutos; el panel `GET /v1/operacion/cuentos` muestra la latencia de cada paso.
 
 ### Pasar a Cloudflare Workers AI
 
@@ -191,8 +193,8 @@ flutter analyze
 flutter test
 ```
 
-- Backend: registro con consentimiento, verificación y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; el cuento sin audio ni rutas de audio; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; y el timeout propio del adaptador.
-- App: widgets del lienzo, la identificación, el visor (texto e imagen, sin audio), la biblioteca y el acceso; el flujo con Riverpod; y el repositorio contra un adaptador HTTP falso con Hive real (caché, lectura sin conexión, sincronización, borrado y reintentos).
+- Backend: registro con consentimiento, verificación y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; la narración (audio por página, ruta de audio, voz apagada y voz caída sin romper el cuento, nada se narra si se rechaza, borrado con el cuento) y su adaptador de Cloudflare con la conversión de WAV a MP3; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; y el timeout propio del adaptador.
+- App: widgets del lienzo, la identificación, el visor (con su botón de escuchar), la biblioteca y el acceso; el flujo con Riverpod; y el repositorio contra un adaptador HTTP falso con Hive real (caché, lectura sin conexión, sincronización, borrado y reintentos).
 
 ## Estado y pendientes
 
@@ -205,12 +207,12 @@ Verificado el 2026-10-21 sin narración, con Ollama real (`gemma3:4b`) y la API 
 Pendiente:
 
 - **Cloudflare sin probar con la cuenta real**: los adaptadores solo se probaron con HTTP simulado; faltan las credenciales, medir latencia y neuronas reales y aceptar la licencia de los modelos de Meta si se eligiera uno.
-- **Narración**: quitada por decisión de Josue del 2026-10-19; volver a tenerla es una decisión aparte.
+- **Narración**: se quitó el 2026-10-19 y se volvió a probar en la rama `feature/Tomas` con Cloudflare MeloTTS (gratis, una sola voz, sin control de emoción). Falta decidir con el equipo si se queda y si se cambia por una voz más expresiva (Azure Speech es-MX, ElevenLabs). Pendiente: respaldo offline con la voz de Android, resaltado de palabras y avance automático de página.
 - **Rasgos del dibujo por parte**: con `gemma3:4b` la visión da los colores de todo el dibujo, no de cada parte, y el cuento aún puede mezclarlos.
 - **Sin llamadas reales a OpenAI**: sigue como alternativa de pago, sin medir.
 - **MinIO local** con la imagen congelada de Bitnami: buscar otra opción mantenida si se usa más allá de desarrollo.
 - **`gpt-image-1-mini` se apaga el 2026-12-01**: migrar a `gpt-image-2` antes.
 - **rembg** no se ha probado con dibujos reales (las pruebas usan el recorte por umbral).
 - **Despliegue**: falta elegir el PaaS, poner HTTPS y el almacén de objetos gestionado.
-- **App**: no se ha compilado un APK ni probado en un dispositivo; sin narración ni etiquetas leídas en voz alta, el niño que aún no lee necesita a un adulto; no hay aviso cuando el cuento termina con la app cerrada (aparece en la biblioteca al volver).
+- **App**: no se ha compilado un APK ni probado en un dispositivo; solo la página se puede escuchar (no las etiquetas ni los botones), así que el niño que aún no lee necesita a un adulto para el resto; no hay aviso cuando el cuento termina con la app cerrada (aparece en la biblioteca al volver).
 - **Límite de tasa con varias réplicas**: usar Redis en `LIMITE_TASA_ALMACEN`.

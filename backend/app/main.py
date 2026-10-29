@@ -83,6 +83,7 @@ def create_app(settings: Settings | None = None, contenedor: Contenedor | None =
                 "texto": c.texto.proveedor,
                 "moderacion": c.moderador.proveedor,
                 "imagen": c.imagen.proveedor,
+                "voz": c.voz.proveedor,
                 "correo": c.correo.proveedor,
             },
         }

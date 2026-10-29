@@ -102,6 +102,32 @@ async def consultar(
     return a_salida(await _cuento_o_404(repo, tutor, cuento_id))
 
 
+async def _medio(
+    c: Contenedor,
+    repo: Repositorio,
+    tutor: Tutor,
+    cuento_id: uuid.UUID,
+    numero: int,
+    tipo: str,
+) -> Response:
+    cuento = await _cuento_o_404(repo, tutor, cuento_id)
+    pagina = next((p for p in cuento.paginas if p.numero == numero), None)
+    if cuento.estado != "listo" or pagina is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "pagina_inexistente")
+    clave = pagina.imagen_clave if tipo == "imagen" else pagina.audio_clave
+    if not clave:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "sin_audio")
+    try:
+        datos = await c.almacen.leer(clave)
+    except ObjetoNoEncontrado as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "objeto_inexistente") from exc
+    return Response(
+        datos,
+        media_type="image/png" if tipo == "imagen" else "audio/mpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
 @router.get("/cuentos/{cuento_id}/paginas/{numero}/imagen", response_class=Response)
 async def imagen(
     cuento_id: uuid.UUID,
@@ -110,17 +136,19 @@ async def imagen(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> Response:
-    cuento = await _cuento_o_404(repo, tutor, cuento_id)
-    pagina = next((p for p in cuento.paginas if p.numero == numero), None)
-    if cuento.estado != "listo" or pagina is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "pagina_inexistente")
-    try:
-        datos = await c.almacen.leer(pagina.imagen_clave)
-    except ObjetoNoEncontrado as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "objeto_inexistente") from exc
-    return Response(
-        datos, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"}
-    )
+    return await _medio(c, repo, tutor, cuento_id, numero, "imagen")
+
+
+@router.get("/cuentos/{cuento_id}/paginas/{numero}/audio", response_class=Response)
+async def audio(
+    cuento_id: uuid.UUID,
+    numero: int,
+    tutor: Tutor = Depends(tutor_con_consentimiento),
+    c: Contenedor = Depends(contenedor),
+    repo: Repositorio = Depends(repositorio),
+) -> Response:
+    """La narración de una página (MP3). 404 `sin_audio` si esa página no la tiene."""
+    return await _medio(c, repo, tutor, cuento_id, numero, "audio")
 
 
 @router.delete("/cuentos/{cuento_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -13,6 +13,7 @@ dependencies:
   flutter_riverpod: ^3.4.3
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  just_audio: ^0.10.6
   path_provider: ^2.1.6
   perfect_freehand: ^2.5.2+1
   shared_preferences: ^2.5.6

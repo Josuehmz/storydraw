@@ -16,3 +16,4 @@ openai==3.35.1
 pillow==11.3.0
 rembg[cpu]==2.0.69
 boto3==1.43.114
+lameenc==1.9.0

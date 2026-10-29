@@ -73,8 +73,9 @@ def test_pipeline_completo(entorno):
     assert cuento["titulo"] == "La aventura de un dragón"
     assert cuento["avisos"] == []
     assert [p["numero"] for p in cuento["paginas"]] == [1, 2, 3]
-    # El cuento sale sin narración: ninguna página trae audio
-    assert all(set(p) == {"numero", "texto", "imagen_url"} for p in cuento["paginas"])
+    # Cada página trae su narración
+    assert all(set(p) == {"numero", "texto", "imagen_url", "audio_url"} for p in cuento["paginas"])
+    assert all(p["audio_url"].endswith(f"/paginas/{p['numero']}/audio") for p in cuento["paginas"])
 
     img = entorno.cliente.get(cuento["paginas"][0]["imagen_url"], headers=cab)
     assert img.status_code == 200 and img.headers["content-type"] == "image/png"
@@ -82,16 +83,19 @@ def test_pipeline_completo(entorno):
 
     # El dibujo nunca se persiste: en el almacén solo hay páginas compuestas.
     claves = set(entorno.c.almacen.objetos)
-    assert claves == {f"cuentos/{cuento_id}/paginas/{n}.png" for n in (1, 2, 3)}
+    assert claves == {
+        *(f"cuentos/{cuento_id}/paginas/{n}.png" for n in (1, 2, 3)),
+        *(f"cuentos/{cuento_id}/audio/{n}.mp3" for n in (1, 2, 3)),
+    }
 
     biblioteca = entorno.cliente.get(f"/v1/perfiles/{perfil}/cuentos", headers=cab).json()
     assert [c["id"] for c in biblioteca] == [cuento_id]
 
     pasos, fila = _pasos(entorno, admin, cuento_id)
-    assert list(pasos) == ["identificar", "escribir", "moderar", "escenarios"]
+    assert list(pasos) == ["identificar", "escribir", "moderar", "escenarios", "narrar"]
     # El niño ya dijo qué dibujó, pero la visión igual lee los rasgos del dibujo
     assert pasos["identificar"]["estado"] == "ok"
-    assert all(pasos[p]["estado"] == "ok" for p in ("escribir", "moderar", "escenarios"))
+    assert all(pasos[p]["estado"] == "ok" for p in ("escribir", "moderar", "escenarios", "narrar"))
     assert fila["latencia_ms"] is not None
     # 800/700 tokens de texto + 3 imágenes
     assert fila["costo_usd"] > 0.015
@@ -135,18 +139,6 @@ def test_degradacion_sin_imagen_usa_fondo_del_banco(entorno):
     assert pasos["escenarios"]["estado"] == "degradado"
     assert pasos["escenarios"]["intentos"] == 6  # 3 páginas × (1 intento + 1 reintento)
     assert pasos["escenarios"]["costo_usd"] == 0
-
-
-def test_sin_narracion_no_hay_rutas_de_audio(entorno):
-    cab = entorno.registrar("a@correo.com")
-    perfil = entorno.crear_perfil(cab)
-    cuento_id = entorno.crear_cuento(cab, perfil).json()["id"]
-    assert _cuento(entorno, cab, cuento_id)["estado"] == "listo"
-    r = entorno.cliente.post(f"/v1/cuentos/{cuento_id}/narracion", headers=cab)
-    assert r.status_code in (404, 405)
-    r = entorno.cliente.get(f"/v1/cuentos/{cuento_id}/paginas/1/audio", headers=cab)
-    assert r.status_code == 404
-    assert "voz" not in entorno.cliente.get("/salud").json()["proveedores"]
 
 
 def test_reintento_por_paso_sin_rehacer_el_cuento(entorno):

@@ -17,7 +17,7 @@ from app.dominio.composicion import Compositor, RecortadorRembg, RecortadorUmbra
 from app.dominio.costos import Tarifario
 from app.dominio.moderacion import Moderacion
 from app.dominio.orquestador import Orquestador
-from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision
+from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision, IVoz
 from app.infra.adaptadores.almacen import AlmacenMemoria, AlmacenS3
 from app.infra.adaptadores.correo_smtp import CorreoSMTP
 from app.infra.adaptadores.falsos import (
@@ -26,6 +26,8 @@ from app.infra.adaptadores.falsos import (
     ImagenNoDisponible,
     TextoFalso,
     VisionFalsa,
+    VozFalsa,
+    VozNoDisponible,
 )
 from app.infra.adaptadores.moderacion_llm import ModeracionLLMSoloDesarrollo
 from app.infra.adaptadores.proveedor_cloudflare import (
@@ -33,6 +35,7 @@ from app.infra.adaptadores.proveedor_cloudflare import (
     ImagenCloudflare,
     TextoCloudflare,
     VisionCloudflare,
+    VozCloudflare,
 )
 from app.infra.adaptadores.proveedor_ollama import ClienteOllama, TextoOllama, VisionOllama
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
@@ -49,6 +52,7 @@ class Contenedor:
     texto: ITexto
     moderador: IModerador
     imagen: IImagen
+    voz: IVoz
     correo: ICorreo
     almacen: IAlmacen
     orquestador: Orquestador
@@ -168,6 +172,20 @@ def construir(settings: Settings) -> Contenedor:
         case _:
             imagen = ImagenFalsa()
 
+    voz: IVoz
+    match settings.proveedor_voz:
+        case "cloudflare":
+            voz = VozCloudflare(
+                cloudflare,
+                settings.cloudflare_modelo_voz,
+                settings.cloudflare_idioma_voz,
+                settings.cloudflare_neuronas_voz_minuto,
+            )
+        case "falso":
+            voz = VozFalsa()
+        case _:
+            voz = VozNoDisponible()
+
     correo: ICorreo = (
         CorreoSMTP(
             settings.smtp_host,
@@ -199,11 +217,13 @@ def construir(settings: Settings) -> Contenedor:
         vision_entrada_mtok=settings.precio_vision_entrada_mtok,
         vision_salida_mtok=settings.precio_vision_salida_mtok,
         imagen=settings.precio_imagen,
+        voz_mil_caracteres=settings.precio_voz_mil_caracteres,
     )
     orquestador = Orquestador(
         vision=vision,
         texto=texto,
         imagen=imagen,
+        voz=voz,
         moderacion=Moderacion(moderador),
         compositor=Compositor(recortador),
         almacen=almacen,
@@ -222,6 +242,7 @@ def construir(settings: Settings) -> Contenedor:
         texto=texto,
         moderador=moderador,
         imagen=imagen,
+        voz=voz,
         correo=correo,
         almacen=almacen,
         orquestador=orquestador,

@@ -51,7 +51,7 @@ ResponseBody bytes(List<int> datos) => ResponseBody.fromBytes(
   },
 );
 
-Map<String, dynamic> cuentoJson(String id, String estado) => {
+Map<String, dynamic> cuentoJson(String id, String estado, {bool conAudio = true}) => {
   'id': id,
   'perfil_id': 'p1',
   'estado': estado,
@@ -63,7 +63,12 @@ Map<String, dynamic> cuentoJson(String id, String estado) => {
       ? <Object>[]
       : [
           for (var n = 1; n <= 3; n++)
-            {'numero': n, 'texto': 'Página $n', 'imagen_url': '/v1/cuentos/$id/paginas/$n/imagen'},
+            {
+              'numero': n,
+              'texto': 'Página $n',
+              'imagen_url': '/v1/cuentos/$id/paginas/$n/imagen',
+              'audio_url': conAudio ? '/v1/cuentos/$id/paginas/$n/audio' : null,
+            },
         ],
 };
 
@@ -121,6 +126,7 @@ void main() {
         return json(cuentoJson('c9', consultas < 3 ? 'en_proceso' : 'listo'));
       }
       if (o.path.endsWith('/imagen')) return bytes([137, 80, 78, 71]);
+      if (o.path.endsWith('/audio')) return bytes([73, 68, 51]);
       return json({}, 404);
     };
 
@@ -132,12 +138,40 @@ void main() {
     expect(consultas, 3);
     expect(cuento.estado, EstadoCuento.listo);
     expect(cuento.paginas.every((p) => p.imagen != null), isTrue);
-    // Sin narración: solo se piden las imágenes, nunca un audio
-    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), isEmpty);
+    // Cada página baja también su narración
+    expect(cuento.paginas.every((p) => p.tieneAudio), isTrue);
+    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), hasLength(3));
 
     final guardado = cache.leer('c9')!;
     expect(guardado.titulo, 'El dragón');
     expect(guardado.paginas.first.imagen, [137, 80, 78, 71]);
+    // La narración queda en Hive: se relee sin conexión
+    expect(guardado.paginas.first.audio, [73, 68, 51]);
+  });
+
+  test('un cuento sin narración no pide audio y se guarda igual', () async {
+    http.manejar = (o) {
+      if (o.path == '/v1/cuentos/c5') return json(cuentoJson('c5', 'listo', conAudio: false));
+      if (o.path.endsWith('/imagen')) return bytes([1]);
+      return json({}, 404);
+    };
+    final cuento = await repo.esperar('c5');
+    expect(cuento.paginas.any((p) => p.tieneAudio), isFalse);
+    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), isEmpty);
+    expect(cache.leer('c5')!.paginas, hasLength(3));
+  });
+
+  test('si falla bajar un audio, el cuento llega igual y esa página queda muda', () async {
+    http.manejar = (o) {
+      if (o.path == '/v1/cuentos/c6') return json(cuentoJson('c6', 'listo'));
+      if (o.path.endsWith('/imagen')) return bytes([1]);
+      if (o.path.endsWith('/paginas/2/audio')) return json({}, 500);
+      if (o.path.endsWith('/audio')) return bytes([9]);
+      return json({}, 404);
+    };
+    final cuento = await repo.esperar('c6');
+    expect(cuento.estado, EstadoCuento.listo);
+    expect(cuento.paginas.map((p) => p.tieneAudio), [true, false, true]);
   });
 
   test('un cuento rechazado no se descarga ni se guarda', () async {

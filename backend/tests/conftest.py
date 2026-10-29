@@ -31,6 +31,7 @@ def settings_de_prueba(ruta_bd: Path, **cambios) -> Settings:
         proveedor_texto="falso",
         proveedor_moderacion="falso",
         proveedor_imagen="falso",
+        proveedor_voz="falso",
         proveedor_correo="falso",
         almacen="memoria",
         recorte="umbral",

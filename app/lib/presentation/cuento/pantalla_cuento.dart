@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/flujo_cuento.dart';
 import '../../application/lienzo.dart';
+import '../../application/proveedores.dart';
 import '../../core/tema.dart';
 import '../../domain/entidades.dart';
+import '../../domain/repositorios.dart';
 import '../identificacion/pantalla_identificacion.dart';
 import '../widgets/comunes.dart';
 
@@ -27,7 +29,27 @@ class PantallaCuento extends ConsumerStatefulWidget {
 class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
   int _pagina = 0;
 
-  void _irA(int pagina) => setState(() => _pagina = pagina);
+  // Se guarda al empezar (no de forma perezosa) para poder detener el audio en `dispose`,
+  // cuando `ref` ya no sirve, incluso si esta página nunca llegó a usarlo.
+  late final Reproductor _voz;
+
+  @override
+  void initState() {
+    super.initState();
+    _voz = ref.read(reproductorProvider);
+  }
+
+  @override
+  void dispose() {
+    _voz.detener();
+    super.dispose();
+  }
+
+  void _irA(int pagina) {
+    // La narración es de la página que se ve: al cambiar, la anterior deja de sonar.
+    _voz.detener();
+    setState(() => _pagina = pagina);
+  }
 
   void _alInicio() {
     ref.read(flujoProvider.notifier).reiniciar();
@@ -103,7 +125,12 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                             ),
                             child: AspectRatio(
                               aspectRatio: 1,
-                              child: _MarcoIlustracion(imagen: pagina.imagen),
+                              child: _MarcoIlustracion(
+                                imagen: pagina.imagen,
+                                accion: pagina.tieneAudio
+                                    ? _BotonEscuchar(voz: _voz, audio: pagina.audio!)
+                                    : null,
+                              ),
                             ),
                           ),
                         ),
@@ -184,9 +211,12 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
 
 /// La ilustración como una lámina de libro: borde blanco grueso, sombra y esquinas suaves.
 class _MarcoIlustracion extends StatelessWidget {
-  const _MarcoIlustracion({required this.imagen});
+  const _MarcoIlustracion({required this.imagen, this.accion});
 
   final Uint8List? imagen;
+
+  /// Botón que flota en la esquina inferior derecha de la lámina (el de escuchar).
+  final Widget? accion;
 
   @override
   Widget build(BuildContext context) {
@@ -197,14 +227,20 @@ class _MarcoIlustracion extends StatelessWidget {
         boxShadow: sombraSuave(),
       ),
       padding: const EdgeInsets.all(6),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(Radios.grande - 6),
-        child: imagen != null
-            ? Image.memory(imagen!, fit: BoxFit.cover)
-            : const ColoredBox(
-                color: Colores.amarillo,
-                child: Icon(Icons.image, size: 96, color: Colors.white),
-              ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(Radios.grande - 6),
+            child: imagen != null
+                ? Image.memory(imagen!, fit: BoxFit.cover)
+                : const ColoredBox(
+                    color: Colores.amarillo,
+                    child: Icon(Icons.image, size: 96, color: Colors.white),
+                  ),
+          ),
+          if (accion != null) Positioned(right: 4, bottom: 4, child: accion!),
+        ],
       ),
     );
   }
@@ -258,6 +294,34 @@ class _PuntosDePagina extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Botón de altavoz: lee en voz alta SOLO la página que se está viendo. Mientras suena, se
+/// vuelve un botón de parar. Sin texto: el niño que aún no lee lo entiende por el icono.
+class _BotonEscuchar extends StatelessWidget {
+  const _BotonEscuchar({required this.voz, required this.audio});
+
+  final Reproductor voz;
+  final Uint8List audio;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: voz.reproduciendo,
+      initialData: false,
+      builder: (_, snapshot) {
+        final suena = snapshot.data ?? false;
+        return BotonIcono(
+          key: const Key('boton-escuchar'),
+          icono: suena ? Icons.stop_rounded : Icons.volume_up_rounded,
+          etiqueta: suena ? 'Parar la lectura' : 'Escuchar esta página',
+          color: suena ? Colores.naranja : Colores.violeta,
+          tamano: 72,
+          alPulsar: () => suena ? voz.detener() : voz.reproducir(audio),
+        );
+      },
     );
   }
 }

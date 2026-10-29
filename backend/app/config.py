@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     # ollama y cloudflare en moderación usan un LLM genérico: SOLO DESARROLLO
     proveedor_moderacion: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
     proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
+    # cloudflare = MeloTTS (gratis dentro de las neuronas); ninguno = el cuento sale sin audio
+    proveedor_voz: Literal["cloudflare", "ninguno", "falso"] = "ninguno"
     proveedor_correo: Literal["smtp", "falso"] = "smtp"
     almacen: Literal["s3", "memoria"] = "s3"
 
@@ -88,6 +90,10 @@ class Settings(BaseSettings):
     cloudflare_neuronas_vision_salida_mtok: float = 27273.0
     cloudflare_neuronas_imagen_tesela: float = 4.80
     cloudflare_neuronas_imagen_paso: float = 9.60
+    # Voz: MeloTTS, español. 18,63 neuronas por minuto de audio (tarifa publicada).
+    cloudflare_modelo_voz: str = "@cf/myshell-ai/melotts"
+    cloudflare_idioma_voz: str = "es"
+    cloudflare_neuronas_voz_minuto: float = 18.63
 
     # Ollama (prueba local, gratis, por CPU): texto, visión y moderación de desarrollo.
     # gemma3:4b ve imágenes, así que un solo modelo cubre las tres capacidades.
@@ -135,6 +141,7 @@ class Settings(BaseSettings):
     precio_vision_entrada_mtok: float = 0.20
     precio_vision_salida_mtok: float = 1.20
     precio_imagen: float = 0.005
+    precio_voz_mil_caracteres: float = 0.05
 
     @model_validator(mode="after")
     def _validar(self) -> Settings:
@@ -146,6 +153,7 @@ class Settings(BaseSettings):
                     ("PROVEEDOR_TEXTO", self.proveedor_texto),
                     ("PROVEEDOR_MODERACION", self.proveedor_moderacion),
                     ("PROVEEDOR_IMAGEN", self.proveedor_imagen),
+                    ("PROVEEDOR_VOZ", self.proveedor_voz),
                     ("PROVEEDOR_CORREO", self.proveedor_correo),
                 )
                 if valor == "falso"
@@ -164,6 +172,7 @@ class Settings(BaseSettings):
             self.proveedor_texto,
             self.proveedor_moderacion,
             self.proveedor_imagen,
+            self.proveedor_voz,
         )
         if "openai" in proveedores and not self.openai_api_key:
             raise ValueError("Falta OPENAI_API_KEY (o usa PROVEEDOR_*=falso en desarrollo)")

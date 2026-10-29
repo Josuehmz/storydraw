@@ -19,7 +19,9 @@ from app.dominio.puertos import (
     IModerador,
     ITexto,
     IVision,
+    IVoz,
     PaginaTexto,
+    ResultadoAudio,
     ResultadoImagen,
     ResultadoVision,
     SolicitudCuento,
@@ -138,3 +140,30 @@ class CorreoFalso(ICorreo):
 
     async def enviar(self, para: str, asunto: str, cuerpo: str) -> None:
         self.enviados.append((para, asunto, cuerpo))
+
+
+class VozNoDisponible(IVoz):
+    """`PROVEEDOR_VOZ=ninguno`: el cuento se entrega escrito, con el aviso de sin narración."""
+
+    proveedor = "ninguno"
+    disponible = False
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        raise ProveedorCaido("sin proveedor de voz configurado")
+
+
+class VozFalsa(IVoz):
+    proveedor = "falso"
+
+    def __init__(self) -> None:
+        self.fallar = False
+        self.llamadas = 0
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        self.llamadas += 1
+        if self.fallar:
+            raise ProveedorCaido("voz caída")
+        # Cabecera ID3 mínima: suficiente para probar el flujo, no es audio real.
+        return ResultadoAudio(
+            b"ID3\x04\x00\x00\x00\x00\x00\x00" + texto.encode()[:64], Uso(caracteres=len(texto))
+        )

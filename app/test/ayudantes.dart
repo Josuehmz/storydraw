@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -17,24 +18,28 @@ final pngMinimo = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 );
 
-Cuento cuentoDePrueba({String id = 'c1', List<String> avisos = const []}) => Cuento(
-  id: id,
-  perfilId: 'p1',
-  estado: EstadoCuento.listo,
-  titulo: 'La aventura de un dragón $id',
-  personaje: 'un dragón',
-  avisos: avisos,
-  creadoEn: DateTime(2026, 10, 17),
-  paginas: [
-    for (var n = 1; n <= 3; n++)
-      Pagina(
-        numero: n,
-        texto: 'Texto de la página $n',
-        imagenUrl: '/v1/cuentos/$id/paginas/$n/imagen',
-        imagen: pngMinimo,
-      ),
-  ],
-);
+Cuento cuentoDePrueba({String id = 'c1', List<String> avisos = const [], bool conAudio = true}) =>
+    Cuento(
+      id: id,
+      perfilId: 'p1',
+      estado: EstadoCuento.listo,
+      titulo: 'La aventura de un dragón $id',
+      personaje: 'un dragón',
+      avisos: avisos,
+      creadoEn: DateTime(2026, 10, 17),
+      paginas: [
+        for (var n = 1; n <= 3; n++)
+          Pagina(
+            numero: n,
+            texto: 'Texto de la página $n',
+            imagenUrl: '/v1/cuentos/$id/paginas/$n/imagen',
+            imagen: pngMinimo,
+            audioUrl: conAudio ? '/v1/cuentos/$id/paginas/$n/audio' : null,
+            // El MP3 de la página n es [n, n]: así cada prueba sabe cuál se reprodujo.
+            audio: conAudio ? Uint8List.fromList([n, n]) : null,
+          ),
+      ],
+    );
 
 class CuentosRepositorioFalso implements CuentosRepositorio {
   CuentosRepositorioFalso({List<Cuento>? cuentos}) : cuentos = cuentos ?? [];
@@ -70,6 +75,31 @@ class CuentosRepositorioFalso implements CuentosRepositorio {
   }
 }
 
+/// Reproductor que no suena: anota qué se pidió reproducir y cuántas veces se detuvo.
+class ReproductorFalso implements Reproductor {
+  final reproducidos = <Uint8List>[];
+  var detenciones = 0;
+  final _estado = StreamController<bool>.broadcast();
+
+  @override
+  Stream<bool> get reproduciendo => _estado.stream;
+
+  @override
+  Future<void> reproducir(Uint8List mp3) async {
+    reproducidos.add(mp3);
+    _estado.add(true);
+  }
+
+  @override
+  Future<void> detener() async {
+    detenciones++;
+    _estado.add(false);
+  }
+
+  @override
+  Future<void> liberar() => _estado.close();
+}
+
 /// Pantalla de teléfono de gama media (360 × 780 dp).
 void usarTelefono(WidgetTester tester) {
   tester.view.physicalSize = const Size(1080, 2340);
@@ -81,6 +111,7 @@ void usarTelefono(WidgetTester tester) {
 Future<Widget> montar(
   Widget hijo, {
   List<Override> overrides = const [],
+  ReproductorFalso? reproductor,
   Map<String, Object> preferencias = const {
     'sesion.token': 'jwt-de-prueba',
     'sesion.perfil_id': 'p1',
@@ -92,7 +123,12 @@ Future<Widget> montar(
   final prefs = await SharedPreferences.getInstance();
   return ProviderScope(
     retry: (_, _) => null,
-    overrides: [sesionLocalProvider.overrideWithValue(SesionLocal(prefs)), ...overrides],
+    overrides: [
+      sesionLocalProvider.overrideWithValue(SesionLocal(prefs)),
+      // just_audio necesita la plataforma: en las pruebas siempre va el reproductor falso.
+      reproductorProvider.overrideWithValue(reproductor ?? ReproductorFalso()),
+      ...overrides,
+    ],
     child: MaterialApp(home: hijo),
   );
 }

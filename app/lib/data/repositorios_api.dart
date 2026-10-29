@@ -136,11 +136,21 @@ class CuentosRepositorioApi implements CuentosRepositorio {
     return Uint8List.fromList(r.data!);
   }
 
-  /// Descarga las imágenes de las páginas y guarda el cuento en la caché.
+  /// Descarga las imágenes y la narración de las páginas y guarda el cuento en la caché.
+  /// Si la narración de una página no se puede bajar, el cuento se entrega igual: solo esa
+  /// página queda sin botón de escuchar.
   Future<Cuento> _descargar(Cuento cuento) async {
     final paginas = <Pagina>[];
     for (final p in cuento.paginas) {
-      paginas.add(p.conMedios(imagen: await _bytes(p.imagenUrl)));
+      Uint8List? audio;
+      if (p.audioUrl != null) {
+        try {
+          audio = await _bytes(p.audioUrl!);
+        } on DioException {
+          audio = null;
+        }
+      }
+      paginas.add(p.conMedios(imagen: await _bytes(p.imagenUrl), audio: audio));
     }
     final completo = cuento.conPaginas(paginas);
     await _cache.guardar(completo);

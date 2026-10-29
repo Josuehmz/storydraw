@@ -76,6 +76,8 @@ class PaginaSalida(BaseModel):
     numero: int
     texto: str
     imagen_url: str
+    # None = esta página no tiene narración (voz apagada o falló); la app no muestra el botón
+    audio_url: str | None = None
 
 
 class CuentoSalida(BaseModel):

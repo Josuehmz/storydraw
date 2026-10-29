@@ -5,6 +5,7 @@ import '../core/config.dart';
 import '../core/http.dart';
 import '../data/cache_cuentos.dart';
 import '../data/repositorios_api.dart';
+import '../data/reproductor_just_audio.dart';
 import '../data/sesion_local.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -34,6 +35,13 @@ final cuentasRepositorioProvider = Provider<CuentasRepositorio>(
     ref.watch(cacheProvider),
   ),
 );
+
+/// Un solo reproductor para toda la app: así dos páginas nunca suenan a la vez.
+final reproductorProvider = Provider<Reproductor>((ref) {
+  final r = ReproductorJustAudio();
+  ref.onDispose(r.liberar);
+  return r;
+});
 
 final cuentosRepositorioProvider = Provider<CuentosRepositorio>(
   (ref) => CuentosRepositorioApi(
