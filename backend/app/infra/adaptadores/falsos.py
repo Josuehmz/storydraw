@@ -137,9 +137,14 @@ class CorreoFalso(ICorreo):
 
     def __init__(self) -> None:
         self.enviados: list[tuple[str, str, str]] = []
+        self.html: list[str | None] = []
+        self.fallar = False
 
-    async def enviar(self, para: str, asunto: str, cuerpo: str) -> None:
+    async def enviar(self, para: str, asunto: str, cuerpo: str, html: str | None = None) -> None:
+        if self.fallar:
+            raise ProveedorCaido("correo caído")
         self.enviados.append((para, asunto, cuerpo))
+        self.html.append(html)
 
 
 class VozNoDisponible(IVoz):

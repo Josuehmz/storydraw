@@ -6,11 +6,16 @@ import 'entidades.dart';
 /// la presentación nunca habla con Dio ni con Hive directamente.
 
 abstract interface class CuentasRepositorio {
-  Future<void> registrar({
+  /// Crea la cuenta. Devuelve `false` si la cuenta quedó creada pero el correo de
+  /// confirmación no pudo salir (el adulto puede pedir que se reenvíe).
+  Future<bool> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
   });
+
+  /// Vuelve a mandar el correo de confirmación (pide la contraseña para no ser un buzón abierto).
+  Future<void> reenviarVerificacion({required String email, required String contrasena});
 
   Future<void> iniciarSesion({required String email, required String contrasena});
 

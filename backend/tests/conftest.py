@@ -33,6 +33,7 @@ def settings_de_prueba(ruta_bd: Path, **cambios) -> Settings:
         proveedor_imagen="falso",
         proveedor_voz="falso",
         proveedor_correo="falso",
+        dominios_correo="",  # las pruebas usan @correo.com; la regla tiene sus propias pruebas
         almacen="memoria",
         recorte="umbral",
         reintentos_por_paso=1,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/proveedores.dart';
+import '../../core/correo.dart';
 import '../../core/errores.dart';
 import '../../core/tema.dart';
 
@@ -23,6 +24,34 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
   String? _mensaje;
   bool _mensajeBueno = false;
 
+  /// Se ofrece «Reenviar correo» justo después de crear la cuenta y cuando el login avisa que
+  /// falta confirmar el correo.
+  bool _puedeReenviar = false;
+  bool _reenviando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Si la app se abrió desde el enlace del correo, el correo ya está confirmado.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final confirmado = ref.read(confirmacionCorreoProvider);
+      if (confirmado != null) _alConfirmar(confirmado);
+    });
+  }
+
+  /// Llegó el enlace del correo: pasa a «Entrar», con el correo ya escrito y un aviso.
+  void _alConfirmar(String correo) {
+    if (!mounted) return;
+    setState(() {
+      _registro = false;
+      if (correo.isNotEmpty) _email.text = correo;
+      _mensajeBueno = true;
+      _mensaje = '¡Correo confirmado! Ya puedes iniciar sesión.';
+      _puedeReenviar = false;
+    });
+    ref.read(confirmacionCorreoProvider.notifier).consumir();
+  }
+
   @override
   void dispose() {
     _email.dispose();
@@ -30,9 +59,12 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
     super.dispose();
   }
 
+  static const _soloGmailHotmail = 'Solo se aceptan correos de Gmail y Hotmail.';
+
   String _textoError(ErrorApi e) => switch (e.tipo) {
     TipoError.correoSinVerificar => 'Primero confirma tu correo con el enlace que te enviamos.',
     TipoError.sesionVencida => 'Correo o contraseña incorrectos.',
+    TipoError.dominioNoPermitido => _soloGmailHotmail,
     TipoError.conflicto => 'Ese correo ya tiene una cuenta. Inicia sesión.',
     TipoError.datosInvalidos => 'Revisa el correo y usa una contraseña de 10 caracteres o más.',
     TipoError.limite => 'Demasiados intentos. Espera un minuto.',
@@ -41,30 +73,45 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
   };
 
   Future<void> _enviar() async {
+    final email = _email.text.trim();
+    // La misma regla del servidor, para avisar antes de enviar nada.
+    if (_registro && !esCorreoPermitido(email)) {
+      setState(() {
+        _mensajeBueno = false;
+        _puedeReenviar = false;
+        _mensaje = _soloGmailHotmail;
+      });
+      return;
+    }
     setState(() {
       _cargando = true;
       _mensaje = null;
     });
     try {
       if (_registro) {
-        await ref
+        final enviado = await ref
             .read(cuentasRepositorioProvider)
             .registrar(
-              email: _email.text.trim(),
+              email: email,
               contrasena: _contrasena.text,
               aceptaConsentimiento: _consiente,
             );
         setState(() {
           _registro = false;
-          _mensajeBueno = true;
-          _mensaje = 'Te enviamos un correo. Confirma la cuenta y luego inicia sesión.';
+          _puedeReenviar = true;
+          _mensajeBueno = enviado;
+          _mensaje = enviado
+              ? 'Te enviamos un correo a $email. Ábrelo y toca «Confirmar mi correo»: '
+                    'volverás aquí y podrás iniciar sesión.'
+              : 'Creamos tu cuenta, pero el correo no pudo salir. Toca «Reenviar correo».';
         });
       } else {
-        await ref.read(sesionProvider.notifier).iniciar(_email.text.trim(), _contrasena.text);
+        await ref.read(sesionProvider.notifier).iniciar(email, _contrasena.text);
       }
     } on ErrorApi catch (e) {
       setState(() {
         _mensajeBueno = false;
+        _puedeReenviar = e.tipo == TipoError.correoSinVerificar;
         _mensaje = _textoError(e);
       });
     } finally {
@@ -72,9 +119,40 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
     }
   }
 
+  Future<void> _reenviar() async {
+    if (_email.text.trim().isEmpty || _contrasena.text.isEmpty) {
+      setState(() {
+        _mensajeBueno = false;
+        _mensaje = 'Escribe tu correo y tu contraseña para reenviar el correo.';
+      });
+      return;
+    }
+    setState(() => _reenviando = true);
+    try {
+      await ref
+          .read(cuentasRepositorioProvider)
+          .reenviarVerificacion(email: _email.text.trim(), contrasena: _contrasena.text);
+      setState(() {
+        _mensajeBueno = true;
+        _mensaje = 'Listo, te reenviamos el correo. Revisa también la carpeta de spam.';
+      });
+    } on ErrorApi catch (e) {
+      setState(() {
+        _mensajeBueno = false;
+        _mensaje = _textoError(e);
+      });
+    } finally {
+      if (mounted) setState(() => _reenviando = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final puedeEnviar = !_cargando && (!_registro || _consiente);
+    // Si el enlace del correo llega con la app abierta, esta pantalla ya está en pantalla.
+    ref.listen<String?>(confirmacionCorreoProvider, (_, correo) {
+      if (correo != null) _alConfirmar(correo);
+    });
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -110,9 +188,10 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
                     controller: _email,
                     keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Correo',
-                      prefixIcon: Icon(Icons.mail_outline, color: Colores.violeta),
+                      helperText: _registro ? 'Solo Gmail o Hotmail' : null,
+                      prefixIcon: const Icon(Icons.mail_outline, color: Colores.violeta),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -171,6 +250,15 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
                   if (_mensaje != null) ...[
                     const SizedBox(height: 14),
                     _Mensaje(texto: _mensaje!, bueno: _mensajeBueno),
+                  ],
+                  if (_puedeReenviar) ...[
+                    const SizedBox(height: 6),
+                    TextButton.icon(
+                      key: const Key('boton-reenviar'),
+                      onPressed: _reenviando ? null : _reenviar,
+                      icon: const Icon(Icons.forward_to_inbox),
+                      label: const Text('Reenviar correo'),
+                    ),
                   ],
                 ],
               ),

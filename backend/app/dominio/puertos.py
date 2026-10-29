@@ -156,8 +156,8 @@ class ICorreo(ABC):
     proveedor: str = "desconocido"
 
     @abstractmethod
-    async def enviar(self, para: str, asunto: str, cuerpo: str) -> None:
-        """Envía un correo transaccional de texto plano."""
+    async def enviar(self, para: str, asunto: str, cuerpo: str, html: str | None = None) -> None:
+        """Envía un correo transaccional: texto plano y, si se da, la versión en HTML."""
 
 
 class IAlmacen(ABC):

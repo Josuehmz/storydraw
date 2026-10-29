@@ -29,6 +29,8 @@ class RegistroSalida(BaseModel):
     email: EmailStr
     verificado: bool
     version_consentimiento: str
+    # False = la cuenta se creó pero el correo no salió: la app ofrece «Reenviar correo»
+    correo_enviado: bool = True
 
 
 class LoginEntrada(BaseModel):

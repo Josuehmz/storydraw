@@ -260,6 +260,26 @@ void main() {
     });
   });
 
+  test('cerrar sesión borra del teléfono los cuentos guardados y la sesión', () async {
+    SharedPreferences.setMockInitialValues({});
+    final sesion = SesionLocal(await SharedPreferences.getInstance());
+    await sesion.guardarToken('t');
+    await sesion.elegirPerfil(id: 'p1', apodo: 'Luna', edad: 7);
+    final cuento = Cuento.desdeJson(cuentoJson('c1', 'listo'));
+    await cache.guardar(
+      cuento.conPaginas([
+        for (final p in cuento.paginas) p.conMedios(imagen: Uint8List(2), audio: Uint8List(2)),
+      ]),
+    );
+    expect(cache.contiene('c1'), isTrue);
+
+    await CuentasRepositorioApi(dio, sesion, cache).cerrarSesion();
+
+    expect(cache.contiene('c1'), isFalse);
+    expect(cache.dePerfil('p1'), isEmpty);
+    expect([sesion.token, sesion.perfilId], [null, null]);
+  });
+
   test('la sesión guarda el token y el perfil en SharedPreferences', () async {
     SharedPreferences.setMockInitialValues({});
     final sesion = SesionLocal(await SharedPreferences.getInstance());

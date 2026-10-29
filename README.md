@@ -151,6 +151,17 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 
 En Linux o macOS, el intérprete es `.venv/bin/python`.
 
+### Cuentas y correo de confirmación
+
+1. **Solo Gmail y Hotmail** pueden crear cuenta (`DOMINIOS_CORREO`, por defecto `gmail.com,hotmail.com`; el dominio debe coincidir entero, así que `x@gmail.com.evil.com` no pasa; vacío = cualquiera). Otro dominio recibe `422 dominio_no_permitido` y no se crea nada. La app repite la regla antes de enviar. El inicio de sesión no filtra dominios.
+2. El registro manda un correo (texto y HTML) con un botón **Confirmar mi correo**. Si el correo no puede salir, la cuenta igual se crea y la respuesta trae `correo_enviado: false`; la app ofrece **Reenviar correo** (`POST /v1/auth/reenviar-verificacion`, pide la contraseña). Sin correo confirmado no hay login (`403 correo_sin_verificar`).
+3. El enlace del correo (`GET /v1/auth/verificar?token=...`) confirma la cuenta y, si lo abre un navegador, muestra una página que **abre la app sola** con `storydraw://verificado?email=...` (con un botón grande por si el navegador lo bloquea). La app cae en «Entrar» con el correo escrito y el aviso «¡Correo confirmado!». Un cliente que no sea navegador recibe JSON. Tocar el enlace dos veces es inofensivo.
+4. Al iniciar sesión se olvida el perfil guardado y al cerrarla se borran del teléfono los cuentos guardados, para que dos cuentas en el mismo teléfono nunca se mezclen.
+
+**Correo real con Gmail** (pruebas y pilotos pequeños, ~500 correos al día): activa la verificación en dos pasos de la cuenta, crea una «contraseña de aplicación» en `myaccount.google.com/apppasswords` y pon en el `.env`: `SMTP_HOST=smtp.gmail.com`, `SMTP_PUERTO=587`, `SMTP_SEGURIDAD=starttls`, `SMTP_USUARIO=tucuenta@gmail.com`, `SMTP_CONTRASENA=<contraseña de aplicación>`, `SMTP_REMITENTE=StoryDraw <tucuenta@gmail.com>`. Para producción conviene un servicio transaccional con dominio propio (SPF/DKIM) para que no caiga en spam.
+
+**`URL_PUBLICA` es la dirección con la que el teléfono llega al backend** y va dentro del enlace del correo, así que `localhost` no sirve: emulador de Android `http://10.0.2.2:8000`; teléfono real en la misma Wi-Fi `http://IP-DE-TU-PC:8000` (el backend escucha en `0.0.0.0`); producción, la URL https pública. El esquema `storydraw://` está declarado en `AndroidManifest.xml` (con `app_links` en la app) y se puede probar sin Gmail: `adb shell am start -a android.intent.action.VIEW -d "<enlace del correo>"`.
+
 ## Cómo correr la app
 
 ```bash
@@ -166,7 +177,7 @@ No hace falta generación de código: los adaptadores y proveedores están escri
 
 Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto como referencia). Las vacías toman el valor por defecto de `backend/app/config.py`.
 
-- General: `ENTORNO`, `URL_PUBLICA`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
+- General: `ENTORNO`, `URL_PUBLICA`, `DOMINIOS_CORREO`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
 - Base de datos: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`
 - Proveedores: `PROVEEDOR_VISION`, `PROVEEDOR_TEXTO`, `PROVEEDOR_MODERACION`, `PROVEEDOR_IMAGEN`, `PROVEEDOR_CORREO`, `ALMACEN`
 - Cloudflare Workers AI: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_MODELO_VISION`, `CLOUDFLARE_MODELO_TEXTO`, `CLOUDFLARE_MODELO_MODERACION`, `CLOUDFLARE_MODELO_IMAGEN`, `CLOUDFLARE_PASOS_IMAGEN`, `CLOUDFLARE_DESACTIVAR_RAZONAMIENTO`, `CLOUDFLARE_TIMEOUT_S`, `CLOUDFLARE_USD_POR_MIL_NEURONAS`, `CLOUDFLARE_NEURONAS_*`

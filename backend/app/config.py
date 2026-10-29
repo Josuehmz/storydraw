@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     jwt_secreto: SecretStr = Field(..., min_length=32)
     jwt_minutos: int = 60 * 24
     verificacion_horas: int = 48
+    # Dominios que pueden crear cuenta, separados por coma. Vacío = cualquiera.
+    dominios_correo: str = "gmail.com,hotmail.com"
+    # Cómo abre la app el enlace de confirmación (esquema propio + paquete para Chrome)
+    app_esquema: str = "storydraw"
+    app_paquete_android: str = "com.storydraw.storydraw"
     version_consentimiento: str = "2026-10"
     admin_emails: str = ""
     contenido_emails: str = ""
@@ -189,6 +194,10 @@ class Settings(BaseSettings):
     @staticmethod
     def _lista(valor: str) -> list[str]:
         return [x.strip().lower() for x in valor.split(",") if x.strip()]
+
+    @property
+    def lista_dominios_correo(self) -> list[str]:
+        return [d.lstrip("@") for d in self._lista(self.dominios_correo)]
 
     @property
     def lista_admin(self) -> list[str]:

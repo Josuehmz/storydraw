@@ -1,12 +1,21 @@
 """Cuentas: registro con consentimiento previo, verificación por correo y login JWT."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse
 
 from app.api import limites
 from app.api.dependencias import contenedor, repositorio, tutor_actual
 from app.api.esquemas import LoginEntrada, RegistroEntrada, RegistroSalida, TokenSalida
+from app.api.plantillas import (
+    correo_verificacion,
+    enlace_app,
+    enlace_app_android,
+    pagina_confirmada,
+    pagina_error,
+)
 from app.contenedor import Contenedor
 from app.infra.orm import Tutor
 from app.infra.repositorio import Repositorio
@@ -14,6 +23,7 @@ from app.infra.seguridad import TokenInvalido
 from app.servicios import borrar_cuentos
 
 router = APIRouter(prefix="/v1/auth", tags=["cuentas"])
+log = logging.getLogger(__name__)
 
 
 def _rol_para(c: Contenedor, email: str) -> str:
@@ -25,16 +35,22 @@ def _rol_para(c: Contenedor, email: str) -> str:
     return "tutor"
 
 
-async def _enviar_verificacion(c: Contenedor, tutor: Tutor) -> None:
+def _dominio_permitido(c: Contenedor, email: str) -> bool:
+    permitidos = c.settings.lista_dominios_correo
+    return not permitidos or email.rsplit("@", 1)[-1].lower() in permitidos
+
+
+async def _enviar_verificacion(c: Contenedor, tutor: Tutor) -> bool:
+    """Manda el correo de confirmación. Devuelve False (sin romper el registro) si no salió."""
     token, _ = c.tokens.emitir(tutor.id, "verificacion")
     enlace = f"{c.settings.url_publica.rstrip('/')}/v1/auth/verificar?token={token}"
-    await c.correo.enviar(
-        tutor.email,
-        "Confirma tu correo en StoryDraw",
-        "Hola:\n\nPara activar la cuenta de StoryDraw y crear el perfil de tu hijo o hija, "
-        f"confirma tu correo en este enlace:\n\n{enlace}\n\n"
-        "Si no creaste esta cuenta, ignora este mensaje.",
-    )
+    asunto, texto, html = correo_verificacion(enlace)
+    try:
+        await c.correo.enviar(tutor.email, asunto, texto, html)
+    except Exception:
+        log.exception("No se pudo enviar el correo de verificación a la cuenta %s", tutor.id)
+        return False
+    return True
 
 
 @router.post("/registro", response_model=RegistroSalida, status_code=status.HTTP_201_CREATED)
@@ -45,6 +61,8 @@ async def registrar(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> RegistroSalida:
+    if not _dominio_permitido(c, datos.email):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "dominio_no_permitido")
     if await repo.tutor_por_email(datos.email):
         raise HTTPException(status.HTTP_409_CONFLICT, "email_registrado")
     tutor = await repo.crear_tutor_con_consentimiento(
@@ -53,27 +71,49 @@ async def registrar(
         _rol_para(c, datos.email),
         c.settings.version_consentimiento,
     )
-    await _enviar_verificacion(c, tutor)
+    enviado = await _enviar_verificacion(c, tutor)
     return RegistroSalida(
         id=tutor.id,
         email=tutor.email,
         verificado=tutor.verificado,
         version_consentimiento=c.settings.version_consentimiento,
+        correo_enviado=enviado,
     )
 
 
-@router.get("/verificar")
+@router.get("/verificar", response_model=None)
 async def verificar(
-    token: str, c: Contenedor = Depends(contenedor), repo: Repositorio = Depends(repositorio)
-) -> dict:
+    request: Request,
+    token: str,
+    c: Contenedor = Depends(contenedor),
+    repo: Repositorio = Depends(repositorio),
+) -> dict | HTMLResponse:
+    """Confirma el correo. Un navegador (Accept: text/html) recibe una página que abre la app;
+    cualquier otro cliente recibe JSON."""
+    quiere_html = "text/html" in request.headers.get("accept", "")
     try:
         carga = c.tokens.leer(token, "verificacion")
         tutor_id = uuid.UUID(carga["sub"])
     except (TokenInvalido, ValueError) as exc:
+        if quiere_html:
+            return HTMLResponse(pagina_error(), status_code=status.HTTP_400_BAD_REQUEST)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "token_invalido") from exc
     if not await repo.marcar_verificado(tutor_id):
+        if quiere_html:
+            return HTMLResponse(pagina_error(), status_code=status.HTTP_404_NOT_FOUND)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "cuenta_inexistente")
-    return {"verificado": True}
+    if not quiere_html:
+        return {"verificado": True}
+    tutor = await repo.tutor_por_id(tutor_id)
+    email = tutor.email if tutor else ""
+    esquema = c.settings.app_esquema
+    return HTMLResponse(
+        pagina_confirmada(
+            email,
+            enlace_app(esquema, email),
+            enlace_app_android(esquema, c.settings.app_paquete_android, email),
+        )
+    )
 
 
 @router.post("/reenviar-verificacion", status_code=status.HTTP_202_ACCEPTED)

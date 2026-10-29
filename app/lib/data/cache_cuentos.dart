@@ -67,6 +67,13 @@ class CacheCuentos {
     }
   }
 
+  /// Borra todo lo guardado (cuentos, imágenes y narraciones). Se usa al cerrar sesión: los
+  /// cuentos de un niño no deben quedar en un teléfono donde otra cuenta puede entrar.
+  Future<void> limpiar() async {
+    await _cuentos.clear();
+    await _medios.clear();
+  }
+
   Future<void> borrarPerfil(String perfilId) async {
     for (final c in dePerfil(perfilId)) {
       await borrar(c.id);

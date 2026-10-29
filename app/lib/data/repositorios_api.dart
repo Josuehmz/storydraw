@@ -26,20 +26,30 @@ class CuentasRepositorioApi implements CuentasRepositorio {
   }
 
   @override
-  Future<void> registrar({
+  Future<bool> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
-  }) => _envolver(
-    () => _dio.post<dynamic>(
+  }) => _envolver(() async {
+    final r = await _dio.post<Map<String, dynamic>>(
       '/v1/auth/registro',
       data: {
         'email': email,
         'contrasena': contrasena,
         'acepta_consentimiento': aceptaConsentimiento,
       },
-    ),
-  );
+    );
+    return r.data?['correo_enviado'] as bool? ?? true;
+  });
+
+  @override
+  Future<void> reenviarVerificacion({required String email, required String contrasena}) =>
+      _envolver(
+        () => _dio.post<dynamic>(
+          '/v1/auth/reenviar-verificacion',
+          data: {'email': email, 'contrasena': contrasena},
+        ),
+      );
 
   @override
   Future<void> iniciarSesion({required String email, required String contrasena}) =>
@@ -52,7 +62,10 @@ class CuentasRepositorioApi implements CuentasRepositorio {
       });
 
   @override
-  Future<void> cerrarSesion() => _sesion.cerrar();
+  Future<void> cerrarSesion() async {
+    await _cache?.limpiar();
+    await _sesion.cerrar();
+  }
 
   @override
   Future<List<Perfil>> perfiles() => _envolver(() async {

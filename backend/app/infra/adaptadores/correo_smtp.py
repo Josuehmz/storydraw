@@ -47,10 +47,12 @@ class CorreoSMTP(ICorreo):
                 servidor.login(self._usuario, self._contrasena)
             servidor.send_message(mensaje)
 
-    async def enviar(self, para: str, asunto: str, cuerpo: str) -> None:
+    async def enviar(self, para: str, asunto: str, cuerpo: str, html: str | None = None) -> None:
         mensaje = EmailMessage()
         mensaje["From"] = self._remitente
         mensaje["To"] = para
         mensaje["Subject"] = asunto
         mensaje.set_content(cuerpo)
+        if html:
+            mensaje.add_alternative(html, subtype="html")
         await asyncio.to_thread(self._enviar, mensaje)
