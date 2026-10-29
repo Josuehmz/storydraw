@@ -15,6 +15,7 @@ class EstadoFlujo {
     this.dibujo,
     this.identificacion,
     this.personaje,
+    this.nombre,
     this.cuento,
     this.error,
   });
@@ -25,6 +26,9 @@ class EstadoFlujo {
   final Uint8List? dibujo;
   final Identificacion? identificacion;
   final String? personaje;
+
+  /// Apodo opcional que el niño le puso al personaje; el cuento lo llama así.
+  final String? nombre;
   final Cuento? cuento;
   final TipoError? error;
 
@@ -32,6 +36,7 @@ class EstadoFlujo {
     Fase? fase,
     Identificacion? identificacion,
     String? personaje,
+    String? nombre,
     Cuento? cuento,
     TipoError? error,
   }) => EstadoFlujo(
@@ -39,6 +44,7 @@ class EstadoFlujo {
     dibujo: dibujo,
     identificacion: identificacion ?? this.identificacion,
     personaje: personaje ?? this.personaje,
+    nombre: nombre ?? this.nombre,
     cuento: cuento ?? this.cuento,
     error: error,
   );
@@ -65,14 +71,19 @@ class FlujoCuentoNotifier extends Notifier<EstadoFlujo> {
     state = state.copiar(fase: Fase.eligiendo, identificacion: identificacion);
   }
 
-  Future<void> crear(String personaje) async {
+  Future<void> crear(String personaje, {String? nombre}) async {
     final dibujo = state.dibujo;
     final perfil = ref.read(sesionProvider).perfil;
     if (dibujo == null || perfil == null) return;
-    state = state.copiar(fase: Fase.generando, personaje: personaje);
+    state = state.copiar(fase: Fase.generando, personaje: personaje, nombre: nombre);
     final repo = ref.read(cuentosRepositorioProvider);
     try {
-      final id = await repo.crear(perfilId: perfil.id, dibujo: dibujo, personaje: personaje);
+      final id = await repo.crear(
+        perfilId: perfil.id,
+        dibujo: dibujo,
+        personaje: personaje,
+        nombre: nombre,
+      );
       final cuento = await repo.esperar(id);
       if (!ref.mounted) return;
       state = switch (cuento.estado) {

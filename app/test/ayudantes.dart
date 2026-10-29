@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:storydraw/application/flujo_cuento.dart';
 import 'package:storydraw/application/proveedores.dart';
 import 'package:storydraw/data/sesion_local.dart';
 import 'package:storydraw/domain/entidades.dart';
@@ -53,6 +54,7 @@ class CuentosRepositorioFalso implements CuentosRepositorio {
     required String perfilId,
     required Uint8List dibujo,
     String? personaje,
+    String? nombre,
   }) async => 'c1';
 
   @override
@@ -93,4 +95,22 @@ Future<Widget> montar(
     overrides: [sesionLocalProvider.overrideWithValue(SesionLocal(prefs)), ...overrides],
     child: MaterialApp(home: hijo),
   );
+}
+
+/// Flujo con un estado fijo que anota lo que se le pide crear, sin tocar la red.
+class FlujoFijo extends FlujoCuentoNotifier {
+  FlujoFijo(this.inicial);
+
+  final EstadoFlujo inicial;
+  final creados = <String>[];
+  final nombres = <String?>[];
+
+  @override
+  EstadoFlujo build() => inicial;
+
+  @override
+  Future<void> crear(String personaje, {String? nombre}) async {
+    creados.add(personaje);
+    nombres.add(nombre);
+  }
 }

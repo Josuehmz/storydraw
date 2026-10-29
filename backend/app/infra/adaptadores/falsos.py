@@ -80,7 +80,7 @@ class TextoFalso(ITexto, IModerador):
             raise ProveedorCaido("fallo transitorio")
         if self.cuentos_forzados:
             return self.cuentos_forzados.pop(0)
-        p = solicitud.personaje
+        p = solicitud.nombre or solicitud.personaje
         paginas = [
             PaginaTexto(f"Había una vez {p} que soñaba con volar entre las nubes.", "meadow"),
             PaginaTexto(f"Un día, {p} encontró un mapa brillante junto al río.", "river"),

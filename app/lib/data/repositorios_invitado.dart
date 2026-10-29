@@ -125,21 +125,26 @@ class CuentosRepositorioInvitado implements CuentosRepositorio {
   }
 
   @override
-  Future<String> crear({required String perfilId, required Uint8List dibujo, String? personaje}) =>
-      _conToken(() async {
-        final edad = _perfil(perfilId)?.edad ?? _sesion.perfilEdad ?? 8;
-        final r = await _dio.post<Map<String, dynamic>>(
-          '/v1/invitado/cuentos',
-          data: FormData.fromMap({
-            'dibujo': _archivo(dibujo),
-            'edad': '$edad',
-            if (personaje != null && personaje.trim().isNotEmpty) 'personaje': personaje.trim(),
-          }),
-        );
-        final id = r.data!['id'] as String;
-        _perfilDe[id] = perfilId;
-        return id;
-      });
+  Future<String> crear({
+    required String perfilId,
+    required Uint8List dibujo,
+    String? personaje,
+    String? nombre,
+  }) => _conToken(() async {
+    final edad = _perfil(perfilId)?.edad ?? _sesion.perfilEdad ?? 8;
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/v1/invitado/cuentos',
+      data: FormData.fromMap({
+        'dibujo': _archivo(dibujo),
+        'edad': '$edad',
+        if (personaje != null && personaje.trim().isNotEmpty) 'personaje': personaje.trim(),
+        if (nombre != null && nombre.trim().isNotEmpty) 'nombre': nombre.trim(),
+      }),
+    );
+    final id = r.data!['id'] as String;
+    _perfilDe[id] = perfilId;
+    return id;
+  });
 
   /// Convierte la respuesta del servidor en un cuento local, con sus imágenes.
   Cuento _desdeServidor(Map<String, dynamic> j, String perfilId) {

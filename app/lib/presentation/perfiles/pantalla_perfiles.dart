@@ -30,11 +30,16 @@ class PantallaPerfiles extends ConsumerWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_forever, size: 56, color: Colores.rojo),
         title: Text('¿Borrar a ${perfil.apodo}?'),
         content: const Text('Se borran su perfil y todos sus cuentos. No se puede deshacer.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Borrar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colores.rojo),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Borrar'),
+          ),
         ],
       ),
     );
@@ -68,11 +73,8 @@ class PantallaPerfiles extends ConsumerWidget {
               child: FloatingActionButton.extended(
                 key: const Key('boton-nuevo-perfil'),
                 onPressed: () => _crear(context, ref),
-                icon: const Icon(Icons.person_add, size: 32),
-                label: const Text(
-                  'Nuevo dibujante',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
+                icon: const Icon(Icons.person_add, size: 28),
+                label: const Text('Nuevo dibujante', style: Tipos.boton),
               ),
             )
           : null,
@@ -89,29 +91,48 @@ class PantallaPerfiles extends ConsumerWidget {
     return perfiles.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, _) => Center(
-        child: IconButton(
-          iconSize: 72,
-          icon: const Icon(Icons.refresh),
-          onPressed: () => ref.invalidate(perfilesProvider),
+        child: BotonIcono(
+          icono: Icons.refresh,
+          etiqueta: 'Intentar otra vez',
+          color: Colores.violeta,
+          alPulsar: () => ref.invalidate(perfilesProvider),
         ),
       ),
       data: (lista) => lista.isEmpty
           ? _SinPerfiles(alCrear: () => _crear(context, ref))
-          : GridView.count(
-              // Abajo deja sitio para el botón flotante.
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 112),
-              crossAxisCount: 2,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 0.78,
+          : Column(
               children: [
-                for (final (i, p) in lista.indexed)
-                  _TarjetaPerfil(
-                    perfil: p,
-                    color: _avatares[i % _avatares.length],
-                    alPulsar: () => ref.read(sesionProvider.notifier).elegirPerfil(p),
-                    alMantener: () => _borrar(context, ref, p),
+                Expanded(
+                  child: GridView.count(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                    childAspectRatio: 0.78,
+                    children: [
+                      for (final (i, p) in lista.indexed)
+                        _TarjetaPerfil(
+                          perfil: p,
+                          color: _avatares[i % _avatares.length],
+                          alPulsar: () => ref.read(sesionProvider.notifier).elegirPerfil(p),
+                          alMantener: () => _borrar(context, ref, p),
+                        ),
+                    ],
                   ),
+                ),
+                // Pista solo para el adulto (borrar es un gesto a propósito difícil); abajo
+                // deja sitio para el botón flotante.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 92),
+                  child: Text(
+                    'Mantén pulsado un perfil para borrarlo',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colores.texto.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
               ],
             ),
     );
@@ -145,30 +166,43 @@ class _FormularioPerfilState extends State<_FormularioPerfil> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      icon: const Icon(Icons.face, size: 56, color: Colores.violeta),
       title: const Text('Nuevo perfil'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            key: const Key('campo-apodo'),
-            controller: _apodo,
-            maxLength: 40,
-            decoration: const InputDecoration(labelText: 'Apodo (no hace falta el nombre real)'),
-          ),
-          const SizedBox(height: 8),
-          const Text('Edad'),
-          Wrap(
-            spacing: 6,
-            children: [
-              for (var e = 6; e <= 12; e++)
-                ChoiceChip(
-                  label: Text('$e'),
-                  selected: _edad == e,
-                  onSelected: (_) => setState(() => _edad = e),
-                ),
-            ],
-          ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              key: const Key('campo-apodo'),
+              controller: _apodo,
+              maxLength: 40,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Apodo (no hace falta el nombre real)'),
+            ),
+            const SizedBox(height: 8),
+            Text('Edad', style: Tipos.subtitulo.copyWith(fontSize: 18)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var e = 6; e <= 12; e++)
+                  ChoiceChip(
+                    label: Text('$e'),
+                    showCheckmark: false,
+                    selected: _edad == e,
+                    labelStyle: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: _edad == e ? Colors.white : Colores.texto,
+                    ),
+                    onSelected: (_) => setState(() => _edad = e),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
@@ -202,13 +236,9 @@ class _SinPerfiles extends StatelessWidget {
                 key: const Key('boton-primer-perfil'),
                 onPressed: alCrear,
                 icon: const Icon(Icons.person_add, size: 36),
-                label: const Text(
-                  'Crear el primer dibujante',
-                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
-                ),
+                label: const Text('Crear el primer dibujante', style: Tipos.boton),
                 style: ElevatedButton.styleFrom(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radios.grande)),
                 ),
               ),
             ),
@@ -305,13 +335,16 @@ class _TarjetaPerfil extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'Dibujar como ${perfil.apodo}',
-      child: Material(
-        color: Colors.white,
-        elevation: 3,
-        borderRadius: BorderRadius.circular(28),
+      child: Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radios.grande),
+          side: BorderSide(color: color, width: 3),
+        ),
         child: InkWell(
           key: Key('perfil-${perfil.id}'),
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(Radios.grande),
           onTap: alPulsar,
           onLongPress: alMantener,
           child: Padding(
@@ -322,12 +355,19 @@ class _TarjetaPerfil extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundColor: color,
+                  Container(
+                    width: 88,
+                    height: 88,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                      border: Border.all(color: Colors.white, width: 4),
+                      boxShadow: sombraSuave(color),
+                    ),
                     child: Text(
                       perfil.apodo.characters.first.toUpperCase(),
-                      style: const TextStyle(fontSize: 44, color: Colors.white),
+                      style: Tipos.titulo.copyWith(fontSize: 46, color: Colors.white),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -338,7 +378,19 @@ class _TarjetaPerfil extends StatelessWidget {
                       perfil.apodo,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                      style: Tipos.subtitulo.copyWith(fontSize: 22),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${perfil.edad} años',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: color),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -347,7 +399,8 @@ class _TarjetaPerfil extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colores.naranja,
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(Radios.medio),
+                      boxShadow: sombraSuave(Colores.naranja),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -357,9 +410,10 @@ class _TarjetaPerfil extends StatelessWidget {
                         Text(
                           'Dibujar',
                           style: TextStyle(
+                            fontFamily: 'Fredoka',
                             color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],

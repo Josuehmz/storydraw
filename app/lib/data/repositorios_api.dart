@@ -109,18 +109,23 @@ class CuentosRepositorioApi implements CuentosRepositorio {
   });
 
   @override
-  Future<String> crear({required String perfilId, required Uint8List dibujo, String? personaje}) =>
-      _envolver(() async {
-        final r = await _dio.post<Map<String, dynamic>>(
-          '/v1/cuentos',
-          data: FormData.fromMap({
-            'dibujo': _archivo(dibujo),
-            'perfil_id': perfilId,
-            if (personaje != null && personaje.trim().isNotEmpty) 'personaje': personaje.trim(),
-          }),
-        );
-        return r.data!['id'] as String;
-      });
+  Future<String> crear({
+    required String perfilId,
+    required Uint8List dibujo,
+    String? personaje,
+    String? nombre,
+  }) => _envolver(() async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/v1/cuentos',
+      data: FormData.fromMap({
+        'dibujo': _archivo(dibujo),
+        'perfil_id': perfilId,
+        if (personaje != null && personaje.trim().isNotEmpty) 'personaje': personaje.trim(),
+        if (nombre != null && nombre.trim().isNotEmpty) 'nombre': nombre.trim(),
+      }),
+    );
+    return r.data!['id'] as String;
+  });
 
   Future<Cuento> _consultar(String id) async {
     final r = await _dio.get<Map<String, dynamic>>('/v1/cuentos/$id');

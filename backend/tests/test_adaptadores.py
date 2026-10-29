@@ -130,3 +130,10 @@ def test_regla_de_escenas_solo_paisaje_y_estilo_coherente():
     assert "sin personajes, personas, animales ni texto" in mensaje
     assert "casas, jardines con cercas, calles o parques infantiles" in mensaje
     assert "misma paleta de colores entre páginas" in mensaje
+
+
+def test_nombre_del_personaje_va_al_prompt_del_cuento():
+    con = mensaje_solicitud(SolicitudCuento("un perro", 7, nombre="Rayo"))
+    assert "se llama «Rayo»" in con
+    sin = mensaje_solicitud(SolicitudCuento("un perro", 7))
+    assert "«" not in sin.split("7. ")[1]

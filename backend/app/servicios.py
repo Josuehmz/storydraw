@@ -53,12 +53,17 @@ def a_resumen(cuento: Cuento) -> CuentoResumen:
 
 
 async def procesar_cuento(
-    c: Contenedor, cuento_id: uuid.UUID, dibujo_png: bytes, personaje: str | None, edad: int
+    c: Contenedor,
+    cuento_id: uuid.UUID,
+    dibujo_png: bytes,
+    personaje: str | None,
+    edad: int,
+    nombre: str | None = None,
 ) -> None:
     """Tarea en segundo plano. El dibujo solo vive en esta llamada, en memoria."""
     cid = str(cuento_id)
     try:
-        resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad)
+        resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad, nombre)
     except Exception:
         log.exception("cuento=%s fallo inesperado del orquestador", cuento_id)
         resultado = ResultadoCuento(estado="fallido")
