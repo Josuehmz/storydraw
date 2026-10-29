@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -54,7 +56,7 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: Row(
                 children: [
                   BotonIcono(
@@ -62,7 +64,7 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                     icono: Icons.home,
                     etiqueta: 'Volver a dibujar',
                     color: Colores.verde,
-                    tamano: 56,
+                    tamano: kToqueMinimo,
                     alPulsar: _alInicio,
                   ),
                   const SizedBox(width: 12),
@@ -71,7 +73,7 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                       cuento.titulo ?? '',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                      style: Tipos.titulo.copyWith(fontSize: 24, height: 1.1),
                     ),
                   ),
                 ],
@@ -79,33 +81,36 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 children: [
-                  Center(
-                    child: ConstrainedBox(
-                      // La imagen no empuja el texto fuera de la pantalla.
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * 0.45,
-                      ),
-                      child: AspectRatio(
-                        aspectRatio: 1,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: pagina.imagen != null
-                              ? Image.memory(pagina.imagen!, fit: BoxFit.cover)
-                              : const ColoredBox(
-                                  color: Colores.amarillo,
-                                  child: Icon(Icons.image, size: 96, color: Colors.white),
-                                ),
-                        ),
-                      ),
+                  // Al cambiar de página, la nueva entra con un fundido y un leve ascenso.
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey(_pagina),
+                    tween: Tween(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, t, hijo) => Opacity(
+                      opacity: t,
+                      child: Transform.translate(offset: Offset(0, 16 * (1 - t)), child: hijo),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    pagina.texto,
-                    key: const Key('texto-pagina'),
-                    style: const TextStyle(fontSize: 22, height: 1.5, fontWeight: FontWeight.w600),
+                    child: Column(
+                      children: [
+                        Center(
+                          child: ConstrainedBox(
+                            // La imagen no empuja el texto fuera de la pantalla.
+                            constraints: BoxConstraints(
+                              maxHeight: MediaQuery.sizeOf(context).height * 0.36,
+                            ),
+                            child: AspectRatio(
+                              aspectRatio: 1,
+                              child: _MarcoIlustracion(imagen: pagina.imagen),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _HojaDeTexto(texto: pagina.texto),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (cuento.avisos.contains(Avisos.sinEscenarios))
@@ -119,23 +124,30 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                       key: const Key('boton-no-era-asi'),
                       onPressed: _noEraAsi,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colores.naranja,
-                        side: const BorderSide(color: Colores.naranja, width: 3),
                         minimumSize: const Size.fromHeight(kToqueMinimo),
+                        textStyle: Tipos.boton.copyWith(fontSize: 18),
                       ),
-                      icon: const Icon(Icons.replay, size: 32),
-                      label: const Text(
-                        'No era así: cambiar lo que dibujé',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                      ),
+                      icon: const Icon(Icons.replay, size: 28),
+                      label: const Text('No era así: cambiar lo que dibujé'),
                     ),
                   ],
                   const SizedBox(height: 16),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(12),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(Radios.grande)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colores.texto.withValues(alpha: 0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, -4),
+                  ),
+                ],
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -145,20 +157,7 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
                     etiqueta: 'Página anterior',
                     alPulsar: _pagina == 0 ? null : () => _irA(_pagina - 1),
                   ),
-                  Row(
-                    children: [
-                      for (var i = 0; i < cuento.paginas.length; i++)
-                        Container(
-                          margin: const EdgeInsets.all(4),
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: i == _pagina ? Colores.naranja : Colors.grey.shade300,
-                          ),
-                        ),
-                    ],
-                  ),
+                  _PuntosDePagina(total: cuento.paginas.length, actual: _pagina),
                   ultima
                       ? BotonIcono(
                           key: const Key('boton-fin'),
@@ -179,6 +178,86 @@ class _PantallaCuentoState extends ConsumerState<PantallaCuento> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// La ilustración como una lámina de libro: borde blanco grueso, sombra y esquinas suaves.
+class _MarcoIlustracion extends StatelessWidget {
+  const _MarcoIlustracion({required this.imagen});
+
+  final Uint8List? imagen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Radios.grande),
+        boxShadow: sombraSuave(),
+      ),
+      padding: const EdgeInsets.all(6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(Radios.grande - 6),
+        child: imagen != null
+            ? Image.memory(imagen!, fit: BoxFit.cover)
+            : const ColoredBox(
+                color: Colores.amarillo,
+                child: Icon(Icons.image, size: 96, color: Colors.white),
+              ),
+      ),
+    );
+  }
+}
+
+/// El texto de la página sobre una hoja de papel cálida, con buena lectura.
+class _HojaDeTexto extends StatelessWidget {
+  const _HojaDeTexto({required this.texto});
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Radios.grande),
+        border: Border.all(color: Colores.amarillo.withValues(alpha: 0.6), width: 3),
+      ),
+      child: Text(
+        texto,
+        key: const Key('texto-pagina'),
+        style: const TextStyle(fontSize: 22, height: 1.55, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// Un punto por página; la actual se alarga y toma el color de acción.
+class _PuntosDePagina extends StatelessWidget {
+  const _PuntosDePagina({required this.total, required this.actual});
+
+  final int total;
+  final int actual;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < total; i++)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            width: i == actual ? 30 : 14,
+            height: 14,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(7),
+              color: i == actual ? Colores.naranja : Colores.amarillo.withValues(alpha: 0.55),
+            ),
+          ),
+      ],
     );
   }
 }

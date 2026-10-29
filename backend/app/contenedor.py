@@ -6,7 +6,7 @@ su adaptador y se agrega una rama aquí; el pipeline no se toca.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from openai import AsyncOpenAI
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.dominio.composicion import Compositor, RecortadorRembg, RecortadorUmbral
 from app.dominio.costos import Tarifario
+from app.dominio.invitados import TrabajosInvitado
 from app.dominio.moderacion import Moderacion
 from app.dominio.orquestador import Orquestador
 from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision
@@ -55,6 +56,7 @@ class Contenedor:
     hasher: Hasher
     tokens: Tokens
     http: httpx.AsyncClient
+    invitados: TrabajosInvitado = field(default_factory=TrabajosInvitado)
 
     async def cerrar(self) -> None:
         await self.http.aclose()
@@ -63,6 +65,21 @@ class Contenedor:
 
 def _secreto(valor) -> str:
     return valor.get_secret_value() if valor is not None else ""
+
+
+TIEMPO_MAXIMO_CUENTO_S = 180.0
+
+
+def _tiempo_maximo_cuento(settings: Settings) -> float | None:
+    """Tope del cuento entero. Con Ollama por CPU no hay tope automático."""
+    if settings.tiempo_maximo_cuento_s is not None:
+        return settings.tiempo_maximo_cuento_s
+    proveedores = (
+        settings.proveedor_vision,
+        settings.proveedor_texto,
+        settings.proveedor_moderacion,
+    )
+    return None if "ollama" in proveedores else TIEMPO_MAXIMO_CUENTO_S
 
 
 def construir(settings: Settings) -> Contenedor:
@@ -212,6 +229,7 @@ def construir(settings: Settings) -> Contenedor:
         espera_base_s=settings.espera_reintento_s,
         max_regeneraciones=settings.max_regeneraciones,
         timeout_s=settings.timeout_proveedor_s,
+        tiempo_maximo_s=_tiempo_maximo_cuento(settings),
     )
     motor = crear_motor(settings.database_url)
     return Contenedor(
@@ -230,6 +248,8 @@ def construir(settings: Settings) -> Contenedor:
             settings.jwt_secreto.get_secret_value(),
             settings.jwt_minutos,
             settings.verificacion_horas,
+            settings.invitado_minutos,
         ),
         http=http,
+        invitados=TrabajosInvitado(settings.invitado_retencion_minutos * 60),
     )

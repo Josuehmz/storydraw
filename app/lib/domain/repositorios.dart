@@ -28,7 +28,12 @@ abstract interface class CuentosRepositorio {
   Future<Identificacion> identificar(Uint8List dibujo);
 
   /// Encola el cuento y devuelve su id.
-  Future<String> crear({required String perfilId, required Uint8List dibujo, String? personaje});
+  Future<String> crear({
+    required String perfilId,
+    required Uint8List dibujo,
+    String? personaje,
+    String? nombre,
+  });
 
   /// Consulta hasta que el cuento sale de `en_proceso` y, si está listo,
   /// descarga las páginas a la caché local.

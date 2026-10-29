@@ -115,8 +115,10 @@ PROMPT_VISION = (
     "Eres un asistente amable que mira dibujos hechos por niños de 6 a 12 años. "
     "Di qué personaje u objeto principal dibujó el niño. Devuelve de 2 a 4 hipótesis "
     "distintas, en español, de 1 a 3 palabras cada una (por ejemplo «un perro», «un "
-    "dragón»), con una confianza entre 0 y 1. Sé generoso: es un dibujo infantil, no "
-    "una foto. Nunca describas a personas reales ni datos personales.\n"
+    "dragón»), con una confianza entre 0 y 1. Las hipótesis deben ser cosas diferentes "
+    "entre sí (por ejemplo «un avión», «un pájaro», «un cohete»), nunca sinónimos ni "
+    "variantes de la misma palabra (como «una casa» y «una casita»). Sé generoso: es un "
+    "dibujo infantil, no una foto. Nunca describas a personas reales ni datos personales.\n"
     "En «atributos» describe solo lo que se ve en el dibujo, en español y en minúsculas: "
     "«colores» (de 1 a 4 colores principales del personaje), «elementos» (de 0 a 5 partes "
     "o cosas visibles, como «cola larga», «alas», «sol») y «emocion» (una palabra, como "
@@ -132,18 +134,30 @@ PROMPT_CUENTO = (
     "2. Vocabulario adecuado a la edad; frases cortas; tono cálido.\n"
     "3. Nada de violencia, miedo intenso, armas, sustancias, romance ni marcas comerciales.\n"
     "4. El protagonista no cambia de forma ni de nombre.\n"
-    "5. En «escena», describe en inglés solo el fondo de esa página: paisaje natural y "
-    "objetos (lugar, luz, colores), sin personajes, personas, animales ni texto. Evita "
-    "lugares que sugieren gente, como casas, jardines con cercas, calles o parques "
-    "infantiles; prefiere bosques, praderas, ríos, montañas, cielos o playas. Mantén el "
-    "mismo lugar y la misma paleta de colores entre páginas para que el estilo sea "
-    "coherente.\n"
-    "6. {rasgos}"
+    "5. En «escena», describe en inglés solo el fondo de esa página (lugar, luz, colores y "
+    "objetos del entorno), sin personajes, personas, animales ni texto, porque el "
+    "protagonista es el dibujo del niño y se coloca encima. El lugar debe ser el hábitat "
+    "natural del protagonista: un avión, cohete o ave, en el cielo con nubes; un animal "
+    "de la selva, en la selva; un animal de granja, en una granja con campo; un pez, "
+    "ballena o barco, en el mar; un auto, bus o moto, en una ciudad con calles y "
+    "edificios; un tren, en las vías entre campos y montañas; un dinosaurio, en un "
+    "valle prehistórico con volcanes; un dragón o castillo, en un reino de montañas; "
+    "una casa, en un barrio o campo; una flor o árbol, en un jardín o bosque. Si no es "
+    "ninguno, elige el entorno que mejor le quede. Además, la escena de cada página debe "
+    "mostrar lo que cuenta el texto de esa página (nubes, un río, un libro sobre una "
+    "roca, la luna, lluvia). Mantén el mismo lugar y la misma paleta de colores entre "
+    "páginas para que el estilo sea coherente.\n"
+    "6. {rasgos}\n"
+    "7. {nombre}"
 )
 
 _RASGOS_CONOCIDOS = (
     "Así es el protagonista en el dibujo ({atributos}). Descríbelo solo con esos rasgos: "
     "no inventes otros colores, pelaje, ropa ni partes que no estén en el dibujo."
+)
+_REGLA_NOMBRE = (
+    "El niño le puso nombre al protagonista: se llama «{nombre}». Llámalo siempre por ese "
+    "nombre en el título y en todas las páginas, como un nombre propio."
 )
 _RASGOS_DESCONOCIDOS = (
     "No conoces los colores ni los rasgos del dibujo: no los describas ni los inventes."
@@ -187,18 +201,32 @@ def prompt_fondo(descripcion: str) -> str:
 
 
 def mensaje_cuento(
-    personaje: str, edad: int, paginas: int, atributos: AtributosDibujo | None = None
+    personaje: str,
+    edad: int,
+    paginas: int,
+    atributos: AtributosDibujo | None = None,
+    nombre: str = "",
 ) -> str:
     if atributos is not None and not atributos.vacio:
         rasgos = _RASGOS_CONOCIDOS.format(atributos=atributos.como_texto())
     else:
         rasgos = _RASGOS_DESCONOCIDOS
-    return PROMPT_CUENTO.format(edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos)
+    nombre = nombre.strip()
+    regla_nombre = (
+        _REGLA_NOMBRE.format(nombre=nombre) if nombre else "No tiene nombre: llámalo por lo que es."
+    )
+    return PROMPT_CUENTO.format(
+        edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos, nombre=regla_nombre
+    )
 
 
 def mensaje_solicitud(solicitud: SolicitudCuento) -> str:
     return mensaje_cuento(
-        solicitud.personaje, solicitud.edad, solicitud.paginas, solicitud.atributos
+        solicitud.personaje,
+        solicitud.edad,
+        solicitud.paginas,
+        solicitud.atributos,
+        solicitud.nombre,
     )
 
 

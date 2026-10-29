@@ -301,7 +301,8 @@ async def test_texto_cloudflare_respuestas_ilegibles_lanzan(respuesta):
 async def test_cloudflare_timeout_se_propaga():
     _, manejar = _grabador(httpx.ConnectTimeout("sin red"))
     async with _http(manejar) as http:
-        with pytest.raises(httpx.TimeoutException):
+        # Se vuelve TimeoutError: el orquestador lo reintenta una sola vez
+        with pytest.raises(TimeoutError):
             await TextoCloudflare(_cf(http), "m").escribir_cuento(SolicitudCuento("x", 7))
 
 

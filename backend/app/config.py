@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     contenido_emails: str = ""
 
+    # Modo invitado: SOLO PRUEBAS LOCALES. Deja generar cuentos sin cuenta ni
+    # consentimiento; el cuento no se guarda en el servidor (la app lo guarda en el
+    # dispositivo). Apagado por defecto y prohibido con ENTORNO=produccion.
+    permitir_invitados: bool = False
+    invitado_minutos: int = Field(120, ge=5, le=24 * 60)
+    # Lo no recogido por la app se descarta pasado este tiempo
+    invitado_retencion_minutos: int = Field(30, ge=1, le=24 * 60)
+
     # Un adaptador por capacidad: cambiar de proveedor es cambiar esta variable
     # (ninguno = el proveedor no tiene esa capacidad y el paso se degrada)
     proveedor_vision: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
@@ -79,7 +87,9 @@ class Settings(BaseSettings):
     # Envía chat_template_kwargs.enable_thinking=false (Gemma 4, Qwen 3). Ponlo en false
     # si el modelo de texto elegido no acepta ese campo.
     cloudflare_desactivar_razonamiento: bool = True
-    cloudflare_timeout_s: float = 120.0
+    # Tope por llamada (respuesta completa, cuerpo incluido). Lo normal es 2-18 s; si se
+    # agota, el orquestador reintenta una sola vez y luego falla limpio (o se degrada).
+    cloudflare_timeout_s: float = Field(45.0, gt=0)
     # Tarifa de neuronas y tarifas publicadas de cada modelo (cambian si cambias de modelo)
     cloudflare_usd_por_mil_neuronas: float = 0.011
     cloudflare_neuronas_texto_entrada_mtok: float = 9091.0
@@ -121,6 +131,9 @@ class Settings(BaseSettings):
     espera_reintento_s: float = Field(0.5, ge=0)
     max_regeneraciones: int = Field(2, ge=0, le=5)
     timeout_proveedor_s: float = 60.0
+    # Tope del cuento entero, para que nunca quede colgado. Vacío = automático: 180 s, o
+    # sin tope si algún paso usa Ollama (por CPU tarda minutos).
+    tiempo_maximo_cuento_s: float | None = Field(None, gt=0)
     max_dibujo_bytes: int = 5_000_000
 
     # Límite de tasa (por IP y por cuenta)
@@ -128,6 +141,7 @@ class Settings(BaseSettings):
     limite_identificar: str = "10/minute"
     limite_cuentos_ip: str = "5/minute"
     limite_cuentos_cuenta: str = "30/day"
+    limite_invitado_ip: str = "3/minute;20/day"
 
     # Tarifas en USD (para el costo por cuento del panel de operación)
     precio_texto_entrada_mtok: float = 0.20
@@ -154,6 +168,11 @@ class Settings(BaseSettings):
                 raise ValueError(f"En producción no se permiten adaptadores falsos: {falsos}")
             if self.almacen == "memoria":
                 raise ValueError("En producción ALMACEN debe ser s3")
+            if self.permitir_invitados:
+                raise ValueError(
+                    "PERMITIR_INVITADOS es solo para pruebas locales: "
+                    "en producción no se permiten cuentos sin cuenta ni consentimiento"
+                )
             if self.proveedor_moderacion in ("ollama", "cloudflare"):
                 raise ValueError(
                     "La moderación con LLM genérico es solo para desarrollo: "

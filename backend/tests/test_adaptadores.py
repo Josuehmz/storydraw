@@ -125,8 +125,18 @@ def test_prompt_fondo_estilo_lapices_de_colores():
     assert "no people" in prompt and "no animals" in prompt and "no text" in prompt
 
 
-def test_regla_de_escenas_solo_paisaje_y_estilo_coherente():
-    mensaje = mensaje_solicitud(SolicitudCuento("un perro", 7))
+def test_regla_de_escenas_ambiente_segun_el_dibujo_y_estilo_coherente():
+    mensaje = mensaje_solicitud(SolicitudCuento("un avión", 7))
     assert "sin personajes, personas, animales ni texto" in mensaje
-    assert "casas, jardines con cercas, calles o parques infantiles" in mensaje
+    assert "hábitat natural del protagonista" in mensaje
+    assert "en el cielo con nubes" in mensaje and "en la selva" in mensaje
+    assert "en una ciudad con calles y edificios" in mensaje
+    assert "mostrar lo que cuenta el texto de esa página" in mensaje
     assert "misma paleta de colores entre páginas" in mensaje
+
+
+def test_nombre_del_personaje_va_al_prompt_del_cuento():
+    con = mensaje_solicitud(SolicitudCuento("un perro", 7, nombre="Rayo"))
+    assert "se llama «Rayo»" in con
+    sin = mensaje_solicitud(SolicitudCuento("un perro", 7))
+    assert "«" not in sin.split("7. ")[1]

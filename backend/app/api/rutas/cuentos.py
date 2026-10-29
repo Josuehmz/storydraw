@@ -1,5 +1,6 @@
 """Dibujos y cuentos: identificación asistida, creación, consulta, medios y borrado."""
 
+import asyncio
 import uuid
 
 from fastapi import (
@@ -35,7 +36,8 @@ async def _leer_dibujo(c: Contenedor, archivo: UploadFile) -> bytes:
     if len(datos) > maximo:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "dibujo_demasiado_grande")
     try:
-        return abrir_dibujo(datos)
+        # Pillow con un dibujo grande tarda: en un hilo, para no frenar otras peticiones.
+        return await asyncio.to_thread(abrir_dibujo, datos)
     except DibujoInvalido as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "dibujo_invalido") from exc
 
@@ -70,6 +72,7 @@ async def crear_cuento(
     dibujo: UploadFile = File(...),
     perfil_id: uuid.UUID = Form(...),
     personaje: str | None = Form(None, max_length=120),
+    nombre: str | None = Form(None, max_length=40),
     tutor: Tutor = Depends(tutor_con_consentimiento),
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
@@ -81,7 +84,7 @@ async def crear_cuento(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "perfil_inexistente")
     png = await _leer_dibujo(c, dibujo)
     cuento = await repo.crear_cuento(tutor.id, perfil.id)
-    tareas.add_task(procesar_cuento, c, cuento.id, png, personaje, perfil.edad)
+    tareas.add_task(procesar_cuento, c, cuento.id, png, personaje, perfil.edad, nombre)
     return CuentoCreado(id=cuento.id, estado=cuento.estado)
 
 
