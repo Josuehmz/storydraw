@@ -48,7 +48,7 @@ class _PantallaLienzoState extends ConsumerState<PantallaLienzo> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: Row(
                 children: [
                   BotonIcono(
@@ -56,7 +56,7 @@ class _PantallaLienzoState extends ConsumerState<PantallaLienzo> {
                     icono: Icons.face,
                     etiqueta: 'Cambiar de niño: ${perfil?.apodo ?? ''}',
                     color: Colores.violeta,
-                    tamano: 56,
+                    tamano: kToqueMinimo,
                     alPulsar: () => ref.read(sesionProvider.notifier).cambiarPerfil(),
                   ),
                   const Spacer(),
@@ -65,25 +65,25 @@ class _PantallaLienzoState extends ConsumerState<PantallaLienzo> {
                     icono: Icons.undo,
                     etiqueta: 'Deshacer',
                     color: Colores.azulInfo,
-                    tamano: 56,
+                    tamano: kToqueMinimo,
                     alPulsar: estado.trazos.isEmpty ? null : lienzo.deshacer,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   BotonIcono(
                     key: const Key('boton-limpiar'),
                     icono: Icons.delete_sweep,
                     etiqueta: 'Borrar todo',
                     color: Colores.rojo,
-                    tamano: 56,
+                    tamano: kToqueMinimo,
                     alPulsar: estado.vacio ? null : lienzo.limpiar,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
                   BotonIcono(
                     key: const Key('boton-biblioteca'),
                     icono: Icons.collections_bookmark,
                     etiqueta: 'Mis cuentos',
                     color: Colores.verde,
-                    tamano: 56,
+                    tamano: kToqueMinimo,
                     alPulsar: () => Navigator.of(
                       context,
                     ).push(MaterialPageRoute<void>(builder: (_) => const PantallaBiblioteca())),
@@ -93,69 +93,183 @@ class _PantallaLienzoState extends ConsumerState<PantallaLienzo> {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: RepaintBoundary(
-                    key: _clave,
-                    child: GestureDetector(
-                      key: const Key('lienzo'),
-                      onPanStart: (d) => lienzo.empezar(d.localPosition),
-                      onPanUpdate: (d) => lienzo.mover(d.localPosition),
-                      onPanEnd: (_) => lienzo.terminar(),
-                      child: CustomPaint(
-                        painter: PintorLienzo(estado),
-                        child: const SizedBox.expand(),
-                      ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Container(
+                  // Marco de «hoja de papel»: borde de color, sombra y esquinas redondas.
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(Radios.grande),
+                    border: Border.all(color: Colores.amarillo, width: 5),
+                    boxShadow: sombraSuave(),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(Radios.grande - 5),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        RepaintBoundary(
+                          key: _clave,
+                          child: GestureDetector(
+                            key: const Key('lienzo'),
+                            onPanStart: (d) => lienzo.empezar(d.localPosition),
+                            onPanUpdate: (d) => lienzo.mover(d.localPosition),
+                            onPanEnd: (_) => lienzo.terminar(),
+                            child: CustomPaint(
+                              painter: PintorLienzo(estado),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                        ),
+                        // Encima y fuera del RepaintBoundary: nunca entra en el dibujo exportado.
+                        if (estado.vacio) const _PistaDeDibujo(),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-            SizedBox(
-              height: 64,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                children: [
-                  for (final color in Colores.lienzo)
-                    _Muestra(
-                      color: color,
-                      elegido: color == estado.color,
-                      alPulsar: () => lienzo.elegirColor(color),
-                    ),
-                ],
+            _Bandeja(
+              child: SizedBox(
+                height: 60,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  children: [
+                    for (final color in Colores.lienzo)
+                      _Muestra(
+                        color: color,
+                        elegido: color == estado.color,
+                        alPulsar: () => lienzo.elegirColor(color),
+                      ),
+                  ],
+                ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Row(
                 children: [
-                  for (final g in _grosores)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _Grosor(
-                        grosor: g,
-                        elegido: g == estado.grosor,
-                        alPulsar: () => lienzo.elegirGrosor(g),
+                  _Bandeja(
+                    margen: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final g in _grosores)
+                            _Grosor(
+                              grosor: g,
+                              elegido: g == estado.grosor,
+                              alPulsar: () => lienzo.elegirGrosor(g),
+                            ),
+                        ],
                       ),
                     ),
+                  ),
                   const Spacer(),
-                  // Solo aparece con al menos un trazo: evita toques accidentales.
-                  if (!estado.vacio)
-                    BotonIcono(
-                      key: const Key('boton-crear'),
-                      icono: Icons.auto_awesome,
-                      etiqueta: '¡Crear cuento!',
-                      tamano: 88,
-                      alPulsar: _crear,
-                    ),
+                  // El espacio está reservado: el botón aparece sin mover nada. Solo se
+                  // muestra con al menos un trazo, para evitar toques accidentales.
+                  SizedBox(
+                    width: 104,
+                    height: 104,
+                    child: estado.vacio
+                        ? null
+                        : _Latido(
+                            child: BotonIcono(
+                              key: const Key('boton-crear'),
+                              icono: Icons.auto_awesome,
+                              etiqueta: '¡Crear cuento!',
+                              tamano: 96,
+                              alPulsar: _crear,
+                            ),
+                          ),
+                  ),
                 ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Bandeja blanca y redondeada donde descansan los colores y los grosores.
+class _Bandeja extends StatelessWidget {
+  const _Bandeja({required this.child, this.margen = const EdgeInsets.symmetric(horizontal: 12)});
+
+  final Widget child;
+  final EdgeInsets margen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: margen,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(Radios.grande),
+        boxShadow: sombraSuave(),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Pista tenue mientras el lienzo está vacío: invita a dibujar, sin texto.
+class _PistaDeDibujo extends StatelessWidget {
+  const _PistaDeDibujo();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Center(
+        child: Icon(Icons.brush, size: 140, color: Colores.amarillo.withValues(alpha: 0.45)),
+      ),
+    );
+  }
+}
+
+/// Latido suave del botón de crear: llama la atención sin ser molesto. Se apaga si el
+/// sistema pide menos animaciones.
+class _Latido extends StatefulWidget {
+  const _Latido({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Latido> createState() => _LatidoState();
+}
+
+class _LatidoState extends State<_Latido> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: Tween(
+        begin: 0.95,
+        end: 1.05,
+      ).animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut)),
+      child: widget.child,
     );
   }
 }
@@ -171,13 +285,28 @@ class _Muestra extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: alPulsar,
-      child: Container(
-        width: 52,
-        margin: const EdgeInsets.only(right: 8),
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(color: elegido ? Colores.texto : Colors.white, width: elegido ? 4 : 2),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: elegido ? 52 : 42,
+          height: elegido ? 52 : 42,
+          margin: const EdgeInsets.symmetric(horizontal: 5),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: elegido ? Colores.texto : Colors.white,
+              width: elegido ? 4 : 3,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.4),
+                blurRadius: elegido ? 8 : 4,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: elegido ? const Icon(Icons.check, color: Colors.white, size: 26) : null,
         ),
       ),
     );
@@ -196,12 +325,13 @@ class _Grosor extends StatelessWidget {
     return GestureDetector(
       onTap: alPulsar,
       child: Container(
-        width: kToqueMinimo,
-        height: kToqueMinimo,
+        width: kToqueMinimo - 8,
+        height: kToqueMinimo - 8,
+        margin: const EdgeInsets.symmetric(horizontal: 3),
         decoration: BoxDecoration(
-          color: elegido ? Colores.amarillo : Colors.white,
+          color: elegido ? Colores.amarillo : Colores.crema,
           shape: BoxShape.circle,
-          border: Border.all(color: Colores.texto, width: 2),
+          border: Border.all(color: elegido ? Colores.naranja : Colors.transparent, width: 3),
         ),
         child: Center(
           child: Container(

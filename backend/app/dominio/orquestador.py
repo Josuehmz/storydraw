@@ -234,12 +234,17 @@ class Orquestador:
     # ---------------------------------------------------------------- pipeline
 
     async def crear_cuento(
-        self, cuento_id: str, dibujo_png: bytes, personaje: str | None, edad: int
+        self,
+        cuento_id: str,
+        dibujo_png: bytes,
+        personaje: str | None,
+        edad: int,
+        nombre: str | None = None,
     ) -> ResultadoCuento:
         inicio = time.perf_counter()
         resultado = ResultadoCuento(estado="fallido")
         try:
-            await self._pipeline(resultado, cuento_id, dibujo_png, personaje, edad)
+            await self._pipeline(resultado, cuento_id, dibujo_png, personaje, edad, nombre)
         finally:
             resultado.latencia_ms = int((time.perf_counter() - inicio) * 1000)
         return resultado
@@ -251,6 +256,7 @@ class Orquestador:
         dibujo_png: bytes,
         personaje: str | None,
         edad: int,
+        nombre: str | None = None,
     ) -> None:
         # Recorte en un hilo: es CPU y no debe bloquear el bucle de eventos.
         recorte_tarea = asyncio.create_task(asyncio.to_thread(self.compositor.recortar, dibujo_png))
@@ -268,14 +274,15 @@ class Orquestador:
                 personaje = PERSONAJE_GENERICO
                 resultado.avisos.append(AVISO_SIN_IDENTIFICACION)
         resultado.personaje = personaje
-        solicitud = SolicitudCuento(personaje, edad, PAGINAS, atributos)
+        nombre = (nombre or "").strip()[:40]
+        solicitud = SolicitudCuento(personaje, edad, PAGINAS, atributos, nombre)
 
         # Pasos 2 y 3 · escribir y moderar, con regeneración si se rechaza
         m_escribir = MetricaPaso("escribir", self.texto.proveedor)
         m_moderar = MetricaPaso("moderar", self.moderacion.proveedor)
         resultado.pasos += [m_escribir, m_moderar]
 
-        entrada = personaje
+        entrada = f"{personaje} llamado {nombre}" if nombre else personaje
         if not atributos.vacio:
             entrada += f"\n({atributos.como_texto()})"
         if not await self._moderar(m_moderar, resultado, "entrada", entrada):

@@ -132,18 +132,26 @@ PROMPT_CUENTO = (
     "2. Vocabulario adecuado a la edad; frases cortas; tono cálido.\n"
     "3. Nada de violencia, miedo intenso, armas, sustancias, romance ni marcas comerciales.\n"
     "4. El protagonista no cambia de forma ni de nombre.\n"
-    "5. En «escena», describe en inglés solo el fondo de esa página: paisaje natural y "
-    "objetos (lugar, luz, colores), sin personajes, personas, animales ni texto. Evita "
-    "lugares que sugieren gente, como casas, jardines con cercas, calles o parques "
-    "infantiles; prefiere bosques, praderas, ríos, montañas, cielos o playas. Mantén el "
-    "mismo lugar y la misma paleta de colores entre páginas para que el estilo sea "
-    "coherente.\n"
-    "6. {rasgos}"
+    "5. En «escena», describe en inglés solo el fondo de esa página, sin personajes, "
+    "personas, animales ni texto. El fondo debe ser el lugar donde el protagonista vive o "
+    "se usa de forma natural, para que dibujo y fondo tengan sentido juntos: un carro en "
+    "una carretera, un pez en el mar, un animal de la selva en la selva, un martillo en "
+    "una obra de construcción, un barco en el mar, un avión en el cielo. Si el "
+    "protagonista es un objeto o vehículo, el lugar puede ser urbano o de obra, pero "
+    "siempre vacío de gente. Si no está claro, elige un paisaje natural sencillo. Todas "
+    "las páginas ocurren en ese mismo lugar (puedes variar la hora o el rincón) y mantén "
+    "la misma paleta de colores para que el estilo sea coherente.\n"
+    "6. {rasgos}\n"
+    "7. {nombre}"
 )
 
 _RASGOS_CONOCIDOS = (
     "Así es el protagonista en el dibujo ({atributos}). Descríbelo solo con esos rasgos: "
     "no inventes otros colores, pelaje, ropa ni partes que no estén en el dibujo."
+)
+_REGLA_NOMBRE = (
+    "El niño le puso nombre al protagonista: se llama «{nombre}». Llámalo siempre por ese "
+    "nombre en el título y en todas las páginas, como un nombre propio."
 )
 _RASGOS_DESCONOCIDOS = (
     "No conoces los colores ni los rasgos del dibujo: no los describas ni los inventes."
@@ -187,18 +195,32 @@ def prompt_fondo(descripcion: str) -> str:
 
 
 def mensaje_cuento(
-    personaje: str, edad: int, paginas: int, atributos: AtributosDibujo | None = None
+    personaje: str,
+    edad: int,
+    paginas: int,
+    atributos: AtributosDibujo | None = None,
+    nombre: str = "",
 ) -> str:
     if atributos is not None and not atributos.vacio:
         rasgos = _RASGOS_CONOCIDOS.format(atributos=atributos.como_texto())
     else:
         rasgos = _RASGOS_DESCONOCIDOS
-    return PROMPT_CUENTO.format(edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos)
+    nombre = nombre.strip()
+    regla_nombre = (
+        _REGLA_NOMBRE.format(nombre=nombre) if nombre else "No tiene nombre: llámalo por lo que es."
+    )
+    return PROMPT_CUENTO.format(
+        edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos, nombre=regla_nombre
+    )
 
 
 def mensaje_solicitud(solicitud: SolicitudCuento) -> str:
     return mensaje_cuento(
-        solicitud.personaje, solicitud.edad, solicitud.paginas, solicitud.atributos
+        solicitud.personaje,
+        solicitud.edad,
+        solicitud.paginas,
+        solicitud.atributos,
+        solicitud.nombre,
     )
 
 

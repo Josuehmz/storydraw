@@ -70,6 +70,7 @@ async def crear_cuento(
     dibujo: UploadFile = File(...),
     perfil_id: uuid.UUID = Form(...),
     personaje: str | None = Form(None, max_length=120),
+    nombre: str | None = Form(None, max_length=40),
     tutor: Tutor = Depends(tutor_con_consentimiento),
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
@@ -81,7 +82,7 @@ async def crear_cuento(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "perfil_inexistente")
     png = await _leer_dibujo(c, dibujo)
     cuento = await repo.crear_cuento(tutor.id, perfil.id)
-    tareas.add_task(procesar_cuento, c, cuento.id, png, personaje, perfil.edad)
+    tareas.add_task(procesar_cuento, c, cuento.id, png, personaje, perfil.edad, nombre)
     return CuentoCreado(id=cuento.id, estado=cuento.estado)
 
 

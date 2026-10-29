@@ -61,7 +61,9 @@ class PantallaMomentoMagico extends ConsumerWidget {
                     icono: Icons.refresh,
                     etiqueta: 'Intentar otra vez',
                     tamano: 96,
-                    alPulsar: () => ref.read(flujoProvider.notifier).crear(flujo.personaje ?? ''),
+                    alPulsar: () => ref
+                        .read(flujoProvider.notifier)
+                        .crear(flujo.personaje ?? '', nombre: flujo.nombre),
                   ),
                 BotonIcono(
                   icono: Icons.home,

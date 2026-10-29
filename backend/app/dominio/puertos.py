@@ -67,12 +67,14 @@ class ResultadoVision:
 
 @dataclass(frozen=True)
 class SolicitudCuento:
-    """Lo único que sale hacia el modelo: ni el nombre ni la imagen del niño."""
+    """Lo único que sale hacia el modelo: ni el nombre ni la imagen del niño. `nombre` es el
+    apodo del personaje dibujado, no el del niño."""
 
     personaje: str
     edad: int
     paginas: int = 3
     atributos: AtributosDibujo = field(default_factory=AtributosDibujo)
+    nombre: str = ""  # apodo que el niño le puso al personaje del dibujo (opcional)
 
 
 @dataclass(frozen=True)

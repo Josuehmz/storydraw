@@ -24,3 +24,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Tipografía redondeada y amigable (licencia OFL, ver assets/fuentes/OFL-*.txt).
+  # Fuentes variables: cada peso apunta al mismo archivo.
+  fonts:
+    - family: Fredoka
+      fonts:
+        - asset: assets/fuentes/Fredoka.ttf
+    - family: Nunito
+      fonts:
+        - asset: assets/fuentes/Nunito.ttf
