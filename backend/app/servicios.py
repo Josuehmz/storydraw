@@ -91,7 +91,12 @@ async def borrar_cuentos(c: Contenedor, ids: list[uuid.UUID]) -> None:
 
 
 async def procesar_cuento_invitado(
-    c: Contenedor, trabajo_id: uuid.UUID, dibujo_png: bytes, personaje: str | None, edad: int
+    c: Contenedor,
+    trabajo_id: uuid.UUID,
+    dibujo_png: bytes,
+    personaje: str | None,
+    edad: int,
+    nombre: str | None = None,
 ) -> None:
     """Como `procesar_cuento`, pero sin base de datos: el resultado (con las páginas en
     memoria) espera a que la app lo recoja y el almacén se vacía al terminar. La
@@ -100,7 +105,7 @@ async def procesar_cuento_invitado(
     cid = str(trabajo_id)
     imagenes: dict[int, bytes] = {}
     try:
-        resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad)
+        resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad, nombre)
         if resultado.estado == "listo":
             with medir(cid, "leer_almacen"):
                 for pagina in resultado.paginas:

@@ -123,6 +123,24 @@ void main() {
     expect(http.peticiones, isEmpty);
   });
 
+  test('crear manda el nombre que el niño le puso al personaje', () async {
+    await sesion.guardarTokenInvitado('jwt-invitado');
+    final perfil = await cuentas.crearPerfil(apodo: 'Luna', edad: 9);
+    http.manejar = (o) => respuestaJson({'id': 'g3', 'estado': 'en_proceso'}, 202);
+
+    await cuentos.crear(
+      perfilId: perfil.id,
+      dibujo: Uint8List(4),
+      personaje: 'un pez',
+      nombre: ' Burbuja ',
+    );
+    expect(Map.fromEntries((http.peticiones.first.data as FormData).fields), {
+      'edad': '9',
+      'personaje': 'un pez',
+      'nombre': 'Burbuja',
+    });
+  });
+
   test('un cuento rechazado no se guarda', () async {
     http.manejar = (o) => respuestaJson(cuentoInvitado('g2', 'rechazado'));
     final cuento = await cuentos.esperar('g2');

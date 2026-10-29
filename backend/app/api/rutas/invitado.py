@@ -91,12 +91,13 @@ async def crear_cuento(
     dibujo: UploadFile = File(...),
     edad: int = Form(..., ge=6, le=12),
     personaje: str | None = Form(None, max_length=120),
+    nombre: str | None = Form(None, max_length=40),
     invitado: str = Depends(invitado_actual),
     c: Contenedor = Depends(contenedor),
 ) -> CuentoCreado:
     png = await _leer_dibujo(c, dibujo)
     trabajo = c.invitados.crear(invitado)
-    tareas.add_task(procesar_cuento_invitado, c, trabajo.id, png, personaje, edad)
+    tareas.add_task(procesar_cuento_invitado, c, trabajo.id, png, personaje, edad, nombre)
     return CuentoCreado(id=trabajo.id, estado="en_proceso")
 
 

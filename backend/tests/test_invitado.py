@@ -96,6 +96,21 @@ def test_cuento_de_invitado_se_entrega_entero_y_no_queda_en_el_servidor(crear_en
     assert entorno.cliente.get(f"/v1/invitado/cuentos/{cuento_id}", headers=cab).status_code == 404
 
 
+def test_nombre_del_personaje_llega_al_cuento_del_invitado(crear_entorno):
+    entorno = crear_entorno(permitir_invitados=True)
+    cab = _entrar(entorno)
+    r = entorno.cliente.post(
+        "/v1/invitado/cuentos",
+        data={"edad": "8", "personaje": "un dragón", "nombre": "Rayo"},
+        files={"dibujo": ("dibujo.png", dibujo_png(), "image/png")},
+        headers=cab,
+    )
+    assert r.status_code == 202, r.text
+    cuento = entorno.cliente.get(f"/v1/invitado/cuentos/{r.json()['id']}", headers=cab).json()
+    assert cuento["estado"] == "listo"
+    assert "Rayo" in cuento["paginas"][0]["texto"]
+
+
 def test_la_moderacion_tambien_aplica_al_invitado(crear_entorno):
     entorno = crear_entorno(permitir_invitados=True)
     cab = _entrar(entorno)
