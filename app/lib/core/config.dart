@@ -20,9 +20,11 @@ class AppConfig {
     this.dominiosCorreo = const [],
   });
 
+  // Cada `fromEnvironment` tiene que ser `const`: en la web, llamado en tiempo de ejecución,
+  // lanza «can only be used as a const constructor» y la app arranca en gris.
   factory AppConfig.desdeEntorno() => AppConfig(
-    apiUrl: String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000'),
-    modoInvitado: bool.fromEnvironment('MODO_INVITADO'),
+    apiUrl: const String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000'),
+    modoInvitado: const bool.fromEnvironment('MODO_INVITADO'),
     dominiosCorreo: dominiosDesde(const String.fromEnvironment('DOMINIOS_CORREO')),
   );
 
