@@ -31,7 +31,7 @@ def _token(entorno) -> str:
 # ------------------------------------------------------------------ dominios
 
 
-def test_por_defecto_solo_gmail_y_hotmail():
+def test_por_defecto_cualquier_dominio_puede_registrarse():
     s = Settings(
         _env_file=None,
         jwt_secreto="s" * 48,
@@ -42,7 +42,7 @@ def test_por_defecto_solo_gmail_y_hotmail():
         proveedor_correo="falso",
         almacen="memoria",
     )
-    assert s.lista_dominios_correo == ["gmail.com", "hotmail.com"]
+    assert s.lista_dominios_correo == []
 
 
 @pytest.mark.parametrize("email", ["ana@gmail.com", "Ana@GMAIL.com", "luis@hotmail.com"])

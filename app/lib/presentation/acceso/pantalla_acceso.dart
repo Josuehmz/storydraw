@@ -59,12 +59,17 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
     super.dispose();
   }
 
-  static const _soloGmailHotmail = 'Solo se aceptan correos de Gmail y Hotmail.';
+  List<String> get _dominios => ref.read(configProvider).dominiosCorreo;
+
+  /// Con la lista de la compilación dice cuáles; si solo el servidor la tiene, avisa en general.
+  String get _dominioNoPermitido => _dominios.isEmpty
+      ? 'Ese correo no se acepta para crear una cuenta.'
+      : 'Solo se aceptan correos de ${nombresDominios(_dominios)}.';
 
   String _textoError(ErrorApi e) => switch (e.tipo) {
     TipoError.correoSinVerificar => 'Primero confirma tu correo con el enlace que te enviamos.',
     TipoError.sesionVencida => 'Correo o contraseña incorrectos.',
-    TipoError.dominioNoPermitido => _soloGmailHotmail,
+    TipoError.dominioNoPermitido => _dominioNoPermitido,
     TipoError.conflicto => 'Ese correo ya tiene una cuenta. Inicia sesión.',
     TipoError.datosInvalidos => 'Revisa el correo y usa una contraseña de 10 caracteres o más.',
     TipoError.limite => 'Demasiados intentos. Espera un minuto.',
@@ -75,11 +80,11 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
   Future<void> _enviar() async {
     final email = _email.text.trim();
     // La misma regla del servidor, para avisar antes de enviar nada.
-    if (_registro && !esCorreoPermitido(email)) {
+    if (_registro && !esCorreoPermitido(email, _dominios)) {
       setState(() {
         _mensajeBueno = false;
         _puedeReenviar = false;
-        _mensaje = _soloGmailHotmail;
+        _mensaje = _dominioNoPermitido;
       });
       return;
     }
@@ -169,6 +174,7 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
   Widget build(BuildContext context) {
     final puedeEnviar = !_cargando && (!_registro || _consiente);
     final modoInvitado = ref.watch(configProvider).modoInvitado;
+    final dominios = ref.watch(configProvider).dominiosCorreo;
     // Si el enlace del correo llega con la app abierta, esta pantalla ya está en pantalla.
     ref.listen<String?>(confirmacionCorreoProvider, (_, correo) {
       if (correo != null) _alConfirmar(correo);
@@ -210,7 +216,9 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
                     autocorrect: false,
                     decoration: InputDecoration(
                       labelText: 'Correo',
-                      helperText: _registro ? 'Solo Gmail o Hotmail' : null,
+                      helperText: _registro && dominios.isNotEmpty
+                          ? 'Solo ${nombresDominios(dominios)}'
+                          : null,
                       prefixIcon: const Icon(Icons.mail_outline, color: Colores.violeta),
                     ),
                   ),

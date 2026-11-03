@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'correo.dart';
+
 /// Configuración inyectada en la compilación.
 ///
 /// La URL del backend nunca se escribe en el código: llega con
@@ -15,11 +17,13 @@ class AppConfig {
     this.avisoDemora = const Duration(seconds: 60),
     this.reintentosHttp = 2,
     this.modoInvitado = false,
+    this.dominiosCorreo = const [],
   });
 
-  factory AppConfig.desdeEntorno() => const AppConfig(
+  factory AppConfig.desdeEntorno() => AppConfig(
     apiUrl: String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000'),
     modoInvitado: bool.fromEnvironment('MODO_INVITADO'),
+    dominiosCorreo: dominiosDesde(const String.fromEnvironment('DOMINIOS_CORREO')),
   );
 
   final String apiUrl;
@@ -28,6 +32,10 @@ class AppConfig {
   /// `--dart-define=MODO_INVITADO=true` y el backend además necesita
   /// `PERMITIR_INVITADOS=true`, que en producción está prohibido.
   final bool modoInvitado;
+
+  /// Dominios que pueden crear cuenta (vacío = cualquiera). Debe ser la misma lista que
+  /// `DOMINIOS_CORREO` del backend: la app solo avisa antes; el servidor es quien manda.
+  final List<String> dominiosCorreo;
 
   /// Tiempo máximo de cada petición HTTP (contrato con el backend: 90 s).
   final Duration timeout;

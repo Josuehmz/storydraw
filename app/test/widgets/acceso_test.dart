@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:storydraw/application/proveedores.dart';
+import 'package:storydraw/core/config.dart';
 import 'package:storydraw/core/correo.dart';
 import 'package:storydraw/core/errores.dart';
 import 'package:storydraw/presentation/app.dart';
@@ -9,9 +10,24 @@ import '../ayudantes.dart';
 
 void main() {
   group('reglas del correo', () {
-    test('solo Gmail y Hotmail, sin importar mayúsculas ni espacios', () {
+    const gmailHotmail = ['gmail.com', 'hotmail.com'];
+
+    test('la lista llega de la compilación, sin espacios, arrobas ni mayúsculas', () {
+      expect(dominiosDesde(''), isEmpty);
+      expect(dominiosDesde(' gmail.com, @Hotmail.com ,'), gmailHotmail);
+      expect(nombresDominios(gmailHotmail), 'Gmail y Hotmail');
+      expect(nombresDominios(['gmail.com']), 'Gmail');
+    });
+
+    test('sin lista, cualquier dominio pasa (el servidor revisa el formato)', () {
+      for (final correo in ['ana@yahoo.com', 'ana@gmail.com', 'luis@colegio.edu.co']) {
+        expect(esCorreoPermitido(correo, const []), isTrue, reason: correo);
+      }
+    });
+
+    test('con Gmail y Hotmail, solo esos, sin importar mayúsculas ni espacios', () {
       for (final ok in ['ana@gmail.com', ' Ana@GMAIL.com ', 'luis@hotmail.com']) {
-        expect(esCorreoPermitido(ok), isTrue, reason: ok);
+        expect(esCorreoPermitido(ok, gmailHotmail), isTrue, reason: ok);
       }
       for (final mal in [
         'ana@yahoo.com',
@@ -23,7 +39,7 @@ void main() {
         '@gmail.com',
         '',
       ]) {
-        expect(esCorreoPermitido(mal), isFalse, reason: mal);
+        expect(esCorreoPermitido(mal, gmailHotmail), isFalse, reason: mal);
       }
     });
 
@@ -38,7 +54,13 @@ void main() {
     });
   });
 
-  Future<CuentasRepositorioFalso> abrir(WidgetTester tester, {EnlacesFalso? enlaces}) async {
+  /// Por defecto la app se compila con la lista de Gmail y Hotmail, como la rama de Tomás;
+  /// `dominios: const []` es la configuración por defecto (cualquier correo).
+  Future<CuentasRepositorioFalso> abrir(
+    WidgetTester tester, {
+    EnlacesFalso? enlaces,
+    List<String> dominios = const ['gmail.com', 'hotmail.com'],
+  }) async {
     usarTelefono(tester);
     final cuentas = CuentasRepositorioFalso();
     await tester.pumpWidget(
@@ -46,7 +68,15 @@ void main() {
         const StoryDrawApp(),
         preferencias: const {},
         enlaces: enlaces,
-        overrides: [cuentasRepositorioProvider.overrideWithValue(cuentas)],
+        overrides: [
+          cuentasRepositorioProvider.overrideWithValue(cuentas),
+          // Iniciar sesión pasa por cuentasApiProvider (el notifier de la sesión no lee
+          // cuentasRepositorioProvider: dependería de sí mismo).
+          cuentasApiProvider.overrideWithValue(cuentas),
+          configProvider.overrideWithValue(
+            AppConfig(apiUrl: 'http://backend.prueba', dominiosCorreo: dominios),
+          ),
+        ],
       ),
     );
     await tester.pump();
@@ -83,6 +113,24 @@ void main() {
     cuentas.errorAlRegistrar = const ErrorApi(TipoError.dominioNoPermitido, 'dominio_no_permitido');
     await registrarse(tester, 'ana@gmail.com');
     expect(find.text('Solo se aceptan correos de Gmail y Hotmail.'), findsOneWidget);
+  });
+
+  testWidgets('sin lista de dominios, cualquier correo llega al servidor y no hay pista', (
+    tester,
+  ) async {
+    final cuentas = await abrir(tester, dominios: const []);
+    await tester.tap(find.text('Crear cuenta').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Solo Gmail'), findsNothing);
+    await registrarse(tester, 'ana@yahoo.com');
+    expect(cuentas.registrados, ['ana@yahoo.com']);
+  });
+
+  testWidgets('sin lista en la app, el rechazo del servidor se explica en general', (tester) async {
+    final cuentas = await abrir(tester, dominios: const []);
+    cuentas.errorAlRegistrar = const ErrorApi(TipoError.dominioNoPermitido, 'dominio_no_permitido');
+    await registrarse(tester, 'ana@yahoo.com');
+    expect(find.text('Ese correo no se acepta para crear una cuenta.'), findsOneWidget);
   });
 
   testWidgets('con Gmail se crea la cuenta, se explica el correo y se puede reenviar', (

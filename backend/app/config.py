@@ -44,8 +44,9 @@ class Settings(BaseSettings):
     jwt_secreto: SecretStr = Field(..., min_length=32)
     jwt_minutos: int = 60 * 24
     verificacion_horas: int = 48
-    # Dominios que pueden crear cuenta, separados por coma. Vacío = cualquiera.
-    dominios_correo: str = "gmail.com,hotmail.com"
+    # Dominios que pueden crear cuenta, separados por coma. Vacío = cualquiera (por defecto:
+    # limitarlo a Gmail y Hotmail es una decisión pendiente; se enciende con gmail.com,hotmail.com).
+    dominios_correo: str = ""
     # Cómo abre la app el enlace de confirmación (esquema propio + paquete para Chrome)
     app_esquema: str = "storydraw"
     app_paquete_android: str = "com.storydraw.storydraw"
