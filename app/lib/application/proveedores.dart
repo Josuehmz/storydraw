@@ -43,7 +43,9 @@ final cuentasRepositorioProvider = Provider<CuentasRepositorio>((ref) {
 /// de `sesionProvider`, y Riverpod 3 lanza `CircularDependencyError` si el notifier
 /// lee un provider que depende de él (así fallaban «Cerrar sesión» y «Salir del modo
 /// invitado»).
-final cuentasApiProvider = Provider<CuentasRepositorioApi>(
+///
+/// Va tipado con el contrato para que las pruebas lo sustituyan por un falso.
+final cuentasApiProvider = Provider<CuentasRepositorio>(
   (ref) => CuentasRepositorioApi(
     ref.watch(dioProvider),
     ref.watch(sesionLocalProvider),

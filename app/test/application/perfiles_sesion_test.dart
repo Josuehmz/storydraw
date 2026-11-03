@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:storydraw/application/proveedores.dart';
 import 'package:storydraw/data/sesion_local.dart';
 import 'package:storydraw/domain/entidades.dart';
-import 'package:storydraw/domain/repositorios.dart';
 import 'package:storydraw/presentation/perfiles/pantalla_perfiles.dart';
 
 import '../ayudantes.dart';
@@ -37,7 +36,9 @@ void main() {
       final c = ProviderContainer(
         overrides: [
           sesionLocalProvider.overrideWithValue(SesionLocal(prefs)),
-          cuentasRepositorioProvider.overrideWith((ref) => cuentas as CuentasRepositorio),
+          // La sesión entra y sale por cuentasApiProvider (sin el ciclo de Riverpod 3), y la
+          // pantalla de perfiles lo recibe a través de cuentasRepositorioProvider.
+          cuentasApiProvider.overrideWith((ref) => cuentas),
         ],
       );
       addTearDown(c.dispose);
@@ -65,7 +66,7 @@ void main() {
     final c = ProviderContainer(
       overrides: [
         sesionLocalProvider.overrideWithValue(SesionLocal(prefs)),
-        cuentasRepositorioProvider.overrideWith((ref) => CuentasRepositorioFalso()),
+        cuentasApiProvider.overrideWith((ref) => CuentasRepositorioFalso()),
       ],
     );
     addTearDown(c.dispose);
