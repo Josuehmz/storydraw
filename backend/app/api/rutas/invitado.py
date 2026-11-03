@@ -101,6 +101,10 @@ async def crear_cuento(
     return CuentoCreado(id=trabajo.id, estado="en_proceso")
 
 
+def _b64(datos: bytes | None) -> str | None:
+    return base64.b64encode(datos).decode("ascii") if datos else None
+
+
 @router.get("/cuentos/{cuento_id}", response_model=CuentoInvitadoSalida)
 async def consultar(
     cuento_id: uuid.UUID,
@@ -108,7 +112,7 @@ async def consultar(
     c: Contenedor = Depends(contenedor),
 ) -> CuentoInvitadoSalida:
     """Mientras está en proceso solo da el estado. Al terminar entrega el cuento entero
-    (texto e imágenes en base64) una sola vez y el servidor lo olvida."""
+    (texto, imágenes y voz en base64) una sola vez y el servidor lo olvida."""
     trabajo = c.invitados.de(invitado, cuento_id)
     if trabajo is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "cuento_inexistente")
@@ -129,6 +133,7 @@ async def consultar(
                 numero=p.numero,
                 texto=p.texto,
                 imagen_png_base64=base64.b64encode(trabajo.imagenes[p.numero]).decode("ascii"),
+                audio_mp3_base64=_b64(trabajo.audios.get(p.numero)),
             )
             for p in r.paginas
         ],

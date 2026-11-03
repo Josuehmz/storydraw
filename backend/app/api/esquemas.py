@@ -105,10 +105,12 @@ class PaginaInvitado(BaseModel):
     numero: int
     texto: str
     imagen_png_base64: str
+    # Narración de la página (MP3). Null = la voz está apagada o esa página falló.
+    audio_mp3_base64: str | None = None
 
 
 class CuentoInvitadoSalida(BaseModel):
-    """El cuento del invitado viaja entero (texto e imágenes) y el servidor lo olvida."""
+    """El cuento del invitado viaja entero (texto, imágenes y voz) y el servidor lo olvida."""
 
     id: uuid.UUID
     estado: Literal["en_proceso", "listo", "rechazado", "fallido"]

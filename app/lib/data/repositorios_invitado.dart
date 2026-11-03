@@ -150,7 +150,7 @@ class CuentosRepositorioInvitado implements CuentosRepositorio {
     return id;
   });
 
-  /// Convierte la respuesta del servidor en un cuento local, con sus imágenes.
+  /// Convierte la respuesta del servidor en un cuento local, con sus imágenes y su voz.
   Cuento _desdeServidor(Map<String, dynamic> j, String perfilId) {
     final id = j['id'] as String;
     return Cuento(
@@ -168,6 +168,10 @@ class CuentosRepositorioInvitado implements CuentosRepositorio {
             texto: p['texto'] as String,
             imagenUrl: 'invitado:$id/${p['numero']}',
             imagen: base64Decode(p['imagen_png_base64'] as String),
+            audio: switch (p['audio_mp3_base64']) {
+              final String b64 => base64Decode(b64),
+              _ => null,
+            },
           ),
       ],
     );

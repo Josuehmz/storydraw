@@ -10,8 +10,10 @@ import base64
 import io
 import json
 import math
+import re
 import struct
 import wave
+from pathlib import Path
 
 import httpx
 import pytest
@@ -81,6 +83,12 @@ def test_wav_a_mp3_achica_el_audio_y_mide_la_duracion():
     assert segundos == pytest.approx(2.0)
     assert mp3[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2") or mp3[:3] == b"ID3"
     assert len(mp3) < len(wav) / 8  # 44,1 kHz a 48 kbps
+
+
+def test_lameenc_esta_fijado_en_requirements():
+    """Sin lameenc el backend ni arranca (el adaptador de Cloudflare lo importa)."""
+    requisitos = (Path(__file__).parents[1] / "requirements.txt").read_text(encoding="utf-8")
+    assert re.search(r"^lameenc==\d+\.\d+\.\d+$", requisitos, flags=re.M)
 
 
 def test_wav_invalido_se_rechaza():

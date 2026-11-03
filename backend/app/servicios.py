@@ -109,22 +109,25 @@ async def procesar_cuento_invitado(
     prefijo = f"cuentos/{trabajo_id}/"
     cid = str(trabajo_id)
     imagenes: dict[int, bytes] = {}
+    audios: dict[int, bytes] = {}
     try:
         resultado = await c.orquestador.crear_cuento(cid, dibujo_png, personaje, edad, nombre)
         if resultado.estado == "listo":
             with medir(cid, "leer_almacen"):
                 for pagina in resultado.paginas:
                     imagenes[pagina.numero] = await c.almacen.leer(pagina.imagen_clave)
+                    if pagina.audio_clave:
+                        audios[pagina.numero] = await c.almacen.leer(pagina.audio_clave)
     except Exception:
         log.exception("invitado cuento=%s fallo inesperado", trabajo_id)
         resultado = ResultadoCuento(estado="fallido")
-        imagenes = {}
+        imagenes, audios = {}, {}
     finally:
         del dibujo_png
         with medir(cid, "borrar_almacen"):
             await c.almacen.borrar_prefijo(prefijo)
     with medir(cid, "entregar"):
-        c.invitados.terminar(trabajo_id, resultado, imagenes)
+        c.invitados.terminar(trabajo_id, resultado, imagenes, audios)
     log.info(
         "invitado cuento=%s estado=%s latencia_ms=%d costo_usd=%.5f avisos=%s",
         trabajo_id,
