@@ -134,6 +134,7 @@ class Repositorio:
                     numero=p.numero,
                     texto=p.texto,
                     imagen_clave=p.imagen_clave,
+                    audio_clave=p.audio_clave,
                 )
             )
         for rechazo in r.rechazos:

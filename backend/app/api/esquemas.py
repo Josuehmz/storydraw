@@ -29,6 +29,8 @@ class RegistroSalida(BaseModel):
     email: EmailStr
     verificado: bool
     version_consentimiento: str
+    # False = la cuenta se creó pero el correo no salió: la app ofrece «Reenviar correo»
+    correo_enviado: bool = True
 
 
 class LoginEntrada(BaseModel):
@@ -76,6 +78,8 @@ class PaginaSalida(BaseModel):
     numero: int
     texto: str
     imagen_url: str
+    # None = esta página no tiene narración (voz apagada o falló); la app no muestra el botón
+    audio_url: str | None = None
 
 
 class CuentoSalida(BaseModel):

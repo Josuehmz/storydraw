@@ -1,6 +1,6 @@
 # StoryDraw
 
-StoryDraw convierte el dibujo de un niño de 6 a 12 años en un cuento ilustrado de tres páginas. Por ahora el cuento sale **sin narración**: se lee en pantalla, sin audio. El dibujo del niño no se reinterpreta con IA: se recorta y se monta encima de un fondo generado para cada página, así que el protagonista es siempre su dibujo.
+StoryDraw convierte el dibujo de un niño de 6 a 12 años en un cuento ilustrado de tres páginas. El cuento se lee en pantalla y, si la voz está activada (`PROVEEDOR_VOZ=cloudflare`), cada página se puede **escuchar** con un botón de altavoz, en español latino. El dibujo del niño no se reinterpreta con IA: se recorta y se monta encima de un fondo generado para cada página, así que el protagonista es siempre su dibujo.
 
 El repositorio tiene dos partes:
 
@@ -50,7 +50,7 @@ Los modelos de OpenAI se comprobaron en su documentación oficial el 2026-10-18.
 
 Cada adaptador real tiene un gemelo **falso** (`PROVEEDOR_*=falso`, `ALMACEN=memoria`) que funciona sin red ni claves. Sirve para las pruebas y para desarrollar en local. Con `ENTORNO=produccion` la configuración rechaza los falsos.
 
-### El pipeline: cuatro pasos con reintento y degradación
+### El pipeline: cinco pasos con reintento y degradación
 
 `POST /v1/cuentos` responde `202` al instante y encola el trabajo; el orquestador (asyncio) corre:
 
@@ -59,7 +59,9 @@ Cada adaptador real tiene un gemelo **falso** (`PROVEEDOR_*=falso`, `ALMACEN=mem
 3. **Moderar** (obligatorio). Primero un filtro local por palabras y luego el proveedor. Revisa la entrada del niño y el cuento. Si rechaza, se regenera hasta `MAX_REGENERACIONES` veces sin mostrar lo rechazado. Si el proveedor de moderación cae, el cuento **no** se muestra (falla cerrada). No hay ninguna variable que la desactive.
 4. **Escenarios** (imagen), uno por página, con estilo de libro de cuentos en **lápices de colores y crayón** (trazo a mano, 2D, nada fotorrealista; el prompt es `prompt_fondo` en `comun.py` y lo usan todos los proveedores de imagen). Si falla, se usa un fondo del banco, dibujado con Pillow (aviso `sin_escenarios`). Con `PROVEEDOR_IMAGEN=ninguno` el paso queda `omitido`: no se llama ni se reintenta.
 
-No hay paso de narración: el cuento sale sin audio. Cada paso se reintenta por separado (`REINTENTOS_POR_PASO`) con espera exponencial. Después, la **composición** (Pillow 11 + rembg, sin IA externa) recorta el dibujo y lo monta sobre cada fondo; las páginas se suben al almacén S3.
+5. **Narrar** (voz, opcional), en paralelo con los escenarios y **solo sobre el texto ya moderado**: un audio MP3 por página (`PROVEEDOR_VOZ=cloudflare`, MeloTTS en español, gratis dentro de las neuronas del día; devuelve WAV y el backend lo pasa a MP3 de 48 kbps con `lameenc`). Con `PROVEEDOR_VOZ=ninguno` (lo que pasa si queda vacío) el paso se omite sin avisar. Si la voz estaba activada y falla, el cuento sale escrito con el aviso `sin_narracion`, y solo pierden el audio las páginas que fallaron. Cada audio se sirve en `GET /v1/cuentos/{id}/paginas/{n}/audio` y se borra con el cuento.
+
+Cada paso se reintenta por separado (`REINTENTOS_POR_PASO`) con espera exponencial. Después, la **composición** (Pillow 11 + rembg, sin IA externa) recorta el dibujo y lo monta sobre cada fondo; las páginas se suben al almacén S3.
 
 Cada paso registra intentos, latencia y costo en USD (lo calcula el adaptador; si no, las tarifas `PRECIO_*`). El panel de operación los expone por cuento.
 
@@ -94,7 +96,7 @@ Cada paso registra intentos, latencia y costo en USD (lo calcula el adaptador; s
 
 | Capa | Dónde | Qué hace |
 |---|---|---|
-| Presentación | `app/lib/presentation/` | Lienzo (perfect_freehand), identificación asistida, momento mágico, visor del cuento (texto e imagen, sin audio), biblioteca, acceso del adulto y perfiles. |
+| Presentación | `app/lib/presentation/` | Lienzo (perfect_freehand), identificación asistida, momento mágico, visor del cuento (texto, imagen y botón de escuchar la página actual), biblioteca, acceso del adulto y perfiles. |
 | Aplicación | `app/lib/application/` | Estado y casos de uso con Riverpod (proveedores escritos a mano, sin build_runner). |
 | Dominio | `app/lib/domain/` | Entidades y contratos de repositorio. |
 | Datos | `app/lib/data/` | Dio, caché de cuentos en Hive, sesión en SharedPreferences. |
@@ -129,7 +131,7 @@ cp .env.example .env      # POSTGRES_*, S3_ACCESS_KEY/S3_SECRET_KEY y JWT_SECRET
 docker compose -f docker-compose.yml -f docker-compose.ollama.yml up --build -d
 ```
 
-Qué esperar: el cuento sale con fondos del banco (aviso `sin_escenarios`) y sin audio. Si la visión falla, la identificación devuelve `disponible: false` y la app pasa al campo libre (identificación asistida). Por CPU, cada llamada al modelo tarda minutos; el panel `GET /v1/operacion/cuentos` muestra la latencia de cada paso.
+Qué esperar: el cuento sale con fondos del banco (aviso `sin_escenarios`) y sin audio (Ollama no tiene voz). Si la visión falla, la identificación devuelve `disponible: false` y la app pasa al campo libre (identificación asistida). Por CPU, cada llamada al modelo tarda minutos; el panel `GET /v1/operacion/cuentos` muestra la latencia de cada paso.
 
 ### Pasar a Cloudflare Workers AI
 
@@ -150,6 +152,17 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 ```
 
 En Linux o macOS, el intérprete es `.venv/bin/python`.
+
+### Cuentas y correo de confirmación
+
+1. **Solo Gmail y Hotmail** pueden crear cuenta (`DOMINIOS_CORREO`, por defecto `gmail.com,hotmail.com`; el dominio debe coincidir entero, así que `x@gmail.com.evil.com` no pasa; vacío = cualquiera). Otro dominio recibe `422 dominio_no_permitido` y no se crea nada. La app repite la regla antes de enviar. El inicio de sesión no filtra dominios.
+2. El registro manda un correo (texto y HTML) con un botón **Confirmar mi correo**. Si el correo no puede salir, la cuenta igual se crea y la respuesta trae `correo_enviado: false`; la app ofrece **Reenviar correo** (`POST /v1/auth/reenviar-verificacion`, pide la contraseña). Sin correo confirmado no hay login (`403 correo_sin_verificar`).
+3. El enlace del correo (`GET /v1/auth/verificar?token=...`) confirma la cuenta y, si lo abre un navegador, muestra una página que **abre la app sola** con `storydraw://verificado?email=...` (con un botón grande por si el navegador lo bloquea). La app cae en «Entrar» con el correo escrito y el aviso «¡Correo confirmado!». Un cliente que no sea navegador recibe JSON. Tocar el enlace dos veces es inofensivo.
+4. Al iniciar sesión se olvida el perfil guardado y al cerrarla se borran del teléfono los cuentos guardados, para que dos cuentas en el mismo teléfono nunca se mezclen.
+
+**Correo real con Gmail** (pruebas y pilotos pequeños, ~500 correos al día): activa la verificación en dos pasos de la cuenta, crea una «contraseña de aplicación» en `myaccount.google.com/apppasswords` y pon en el `.env`: `SMTP_HOST=smtp.gmail.com`, `SMTP_PUERTO=587`, `SMTP_SEGURIDAD=starttls`, `SMTP_USUARIO=tucuenta@gmail.com`, `SMTP_CONTRASENA=<contraseña de aplicación>`, `SMTP_REMITENTE=StoryDraw <tucuenta@gmail.com>`. Para producción conviene un servicio transaccional con dominio propio (SPF/DKIM) para que no caiga en spam.
+
+**`URL_PUBLICA` es la dirección con la que el teléfono llega al backend** y va dentro del enlace del correo, así que `localhost` no sirve: emulador de Android `http://10.0.2.2:8000`; teléfono real en la misma Wi-Fi `http://IP-DE-TU-PC:8000` (el backend escucha en `0.0.0.0`); producción, la URL https pública. El esquema `storydraw://` está declarado en `AndroidManifest.xml` (con `app_links` en la app) y se puede probar sin Gmail: `adb shell am start -a android.intent.action.VIEW -d "<enlace del correo>"`.
 
 ## Cómo correr la app
 
@@ -186,7 +199,7 @@ flutter run --dart-define=API_URL=http://10.0.2.2:8000 --dart-define=MODO_INVITA
 
 Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto como referencia). Las vacías toman el valor por defecto de `backend/app/config.py`.
 
-- General: `ENTORNO`, `URL_PUBLICA`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
+- General: `ENTORNO`, `URL_PUBLICA`, `DOMINIOS_CORREO`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
 - Modo invitado (solo pruebas locales): `PERMITIR_INVITADOS`, `INVITADO_MINUTOS`, `INVITADO_RETENCION_MINUTOS`
 - Base de datos: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`
 - Proveedores: `PROVEEDOR_VISION`, `PROVEEDOR_TEXTO`, `PROVEEDOR_MODERACION`, `PROVEEDOR_IMAGEN`, `PROVEEDOR_CORREO`, `ALMACEN`
@@ -214,8 +227,8 @@ flutter analyze
 flutter test
 ```
 
-- Backend: registro con consentimiento, verificación y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; el cuento sin audio ni rutas de audio; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; el timeout propio del adaptador; y el modo invitado (apagado por defecto, rechazado en producción, moderado, sin dejar el cuento en la base de datos ni en el almacén, aislado entre invitados y con límite por IP).
-- App: widgets del lienzo (con la pista del lienzo vacío), la identificación, el visor (texto e imagen, sin audio), la biblioteca, los perfiles (estado vacío con «Crear el primer dibujante» y tarjetas con lápiz) y el acceso (logo, y el botón de invitado solo con `MODO_INVITADO`); el flujo con Riverpod; y los repositorios contra un adaptador HTTP falso con Hive real (caché, lectura sin conexión, sincronización, borrado y reintentos; y en modo invitado, perfiles y cuentos solo locales y renovación del token).
+- Backend: registro con consentimiento, verificación por correo (página que abre la app, reenvío y dominios permitidos) y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; la narración (audio por página, ruta de audio, voz apagada y voz caída sin romper el cuento, nada se narra si se rechaza, borrado con el cuento) y su adaptador de Cloudflare con la conversión de WAV a MP3; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; el timeout propio del adaptador; y el modo invitado (apagado por defecto, rechazado en producción, moderado, sin dejar el cuento en la base de datos ni en el almacén, aislado entre invitados y con límite por IP).
+- App: widgets del lienzo (con la pista del lienzo vacío), la identificación, el visor (texto, imagen y botón de escuchar), la biblioteca, los perfiles (estado vacío con «Crear el primer dibujante» y tarjetas con lápiz) y el acceso (logo, el botón de invitado solo con `MODO_INVITADO`, reenvío del correo de confirmación y regreso desde el enlace); el flujo con Riverpod; y los repositorios contra un adaptador HTTP falso con Hive real (caché, lectura sin conexión, sincronización, borrado y reintentos; y en modo invitado, perfiles y cuentos solo locales y renovación del token).
 
 ## Estado y pendientes
 
@@ -230,12 +243,12 @@ Verificado el 2026-10-26 el modo invitado con Cloudflare Workers AI real (uvicor
 Pendiente:
 
 - **Cloudflare**: ya probado con la cuenta real (ver arriba); falta medir el cupo diario con uso sostenido y aceptar la licencia de los modelos de Meta si se eligiera uno.
-- **Narración**: quitada por decisión del proyecto del 2026-10-19; volver a tenerla es una decisión aparte.
+- **Narración**: se quitó el 2026-10-19 y volvió el 2026-11-03 con la voz de Tomás (Cloudflare MeloTTS, `PROVEEDOR_VOZ=cloudflare`; gratis dentro de las neuronas, una sola voz, sin control de emoción). Apagada por defecto (`ninguno`). Pendiente: elegir si se cambia por una voz más expresiva, respaldo offline con la voz de Android, resaltado de palabras y avance automático de página.
 - **Rasgos del dibujo por parte**: con `gemma3:4b` la visión da los colores de todo el dibujo, no de cada parte, y el cuento aún puede mezclarlos.
 - **Sin llamadas reales a OpenAI**: sigue como alternativa de pago, sin medir.
 - **MinIO local** con la imagen congelada de Bitnami: buscar otra opción mantenida si se usa más allá de desarrollo.
 - **`gpt-image-1-mini` se apaga el 2026-12-01**: migrar a `gpt-image-2` antes.
 - **rembg** no se ha probado con dibujos reales (las pruebas usan el recorte por umbral).
 - **Despliegue**: falta elegir el PaaS, poner HTTPS y el almacén de objetos gestionado.
-- **App**: no se ha compilado un APK ni probado en un dispositivo; sin narración ni etiquetas leídas en voz alta, el niño que aún no lee necesita a un adulto; no hay aviso cuando el cuento termina con la app cerrada (aparece en la biblioteca al volver).
+- **App**: no se ha compilado un APK ni probado en un dispositivo; solo la página se puede escuchar (no las etiquetas ni los botones), así que el niño que aún no lee necesita a un adulto para el resto; no hay aviso cuando el cuento termina con la app cerrada (aparece en la biblioteca al volver).
 - **Límite de tasa con varias réplicas**: usar Redis en `LIMITE_TASA_ALMACEN`.

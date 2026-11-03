@@ -26,11 +26,14 @@ class CuentasRepositorioFalso implements CuentasRepositorio {
   Future<void> borrarPerfil(String perfilId) async => lista.removeWhere((p) => p.id == perfilId);
 
   @override
-  Future<void> registrar({
+  Future<bool> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
-  }) async {}
+  }) async => true;
+
+  @override
+  Future<void> reenviarVerificacion({required String email, required String contrasena}) async {}
 
   @override
   Future<void> iniciarSesion({required String email, required String contrasena}) async {}

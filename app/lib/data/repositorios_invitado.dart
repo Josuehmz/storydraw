@@ -41,11 +41,15 @@ class CuentasRepositorioInvitado implements CuentasRepositorio {
   });
 
   @override
-  Future<void> registrar({
+  Future<bool> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
   }) => throw UnsupportedError('El invitado no tiene cuenta');
+
+  @override
+  Future<void> reenviarVerificacion({required String email, required String contrasena}) =>
+      throw UnsupportedError('El invitado no tiene cuenta');
 
   @override
   Future<void> iniciarSesion({required String email, required String contrasena}) =>

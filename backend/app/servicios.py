@@ -18,6 +18,10 @@ def url_imagen(cuento_id: uuid.UUID, numero: int) -> str:
     return f"/v1/cuentos/{cuento_id}/paginas/{numero}/imagen"
 
 
+def url_audio(cuento_id: uuid.UUID, numero: int) -> str:
+    return f"/v1/cuentos/{cuento_id}/paginas/{numero}/audio"
+
+
 def a_salida(cuento: Cuento) -> CuentoSalida:
     # Mientras no está listo (moderación incluida), no se expone ninguna página.
     paginas = []
@@ -27,6 +31,7 @@ def a_salida(cuento: Cuento) -> CuentoSalida:
                 numero=p.numero,
                 texto=p.texto,
                 imagen_url=url_imagen(cuento.id, p.numero),
+                audio_url=url_audio(cuento.id, p.numero) if p.audio_clave else None,
             )
             for p in cuento.paginas
         ]
