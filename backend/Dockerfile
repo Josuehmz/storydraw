@@ -21,11 +21,13 @@ COPY alembic.ini pyproject.toml ./
 COPY alembic ./alembic
 COPY app ./app
 
-RUN useradd --create-home --uid 10001 storydraw \
+# UID 1000: es el usuario con el que Hugging Face Spaces corre el contenedor; con otro, el
+# modelo de rembg no se podría descargar en /app/.u2net. En docker compose da igual.
+RUN useradd --create-home --uid 1000 storydraw \
     && mkdir -p /app/.u2net && chown -R storydraw /app
 USER storydraw
 
 EXPOSE 8000
 
-# Migra el esquema y arranca. PORT lo inyecta el PaaS; en local es 8000.
+# Migra el esquema y arranca. PORT lo inyecta el PaaS; en local y en el Space (app_port) es 8000.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
