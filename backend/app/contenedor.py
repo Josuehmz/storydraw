@@ -223,6 +223,8 @@ def construir(settings: Settings) -> Contenedor:
             settings.s3_region,
             settings.s3_endpoint_url,
             settings.s3_cifrado_sse,
+            settings.s3_estilo_direccion,
+            settings.s3_checksum,
         )
         if settings.almacen == "s3"
         else AlmacenMemoria()

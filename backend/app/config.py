@@ -134,6 +134,11 @@ class Settings(BaseSettings):
     s3_access_key: SecretStr | None = None
     s3_secret_key: SecretStr | None = None
     s3_cifrado_sse: bool = True
+    # path = el bucket va en la ruta (MinIO y el gateway S3 de Hugging Face lo exigen)
+    s3_estilo_direccion: Literal["path", "virtual", "auto"] = "path"
+    # when_supported = lo que hace boto3 por defecto (CRC32 en cada petición). El gateway de
+    # Hugging Face no entiende esas sumas: allí va when_required (solo si la operación las pide).
+    s3_checksum: Literal["when_supported", "when_required"] = "when_supported"
 
     # Composición
     recorte: Literal["rembg", "umbral"] = "rembg"
