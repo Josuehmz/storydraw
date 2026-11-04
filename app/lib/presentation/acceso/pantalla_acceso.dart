@@ -5,6 +5,7 @@ import '../../application/proveedores.dart';
 import '../../core/correo.dart';
 import '../../core/errores.dart';
 import '../../core/tema.dart';
+import '../../domain/repositorios.dart';
 
 /// Zona del adulto: crear la cuenta con consentimiento previo o iniciar sesión.
 class PantallaAcceso extends ConsumerStatefulWidget {
@@ -94,13 +95,19 @@ class _PantallaAccesoState extends ConsumerState<PantallaAcceso> {
     });
     try {
       if (_registro) {
-        final enviado = await ref
+        final resultado = await ref
             .read(cuentasRepositorioProvider)
             .registrar(
               email: email,
               contrasena: _contrasena.text,
               aceptaConsentimiento: _consiente,
             );
+        if (resultado == ResultadoRegistro.listaParaEntrar) {
+          // El servidor no pide confirmar el correo: se entra directo con la cuenta nueva.
+          await ref.read(sesionProvider.notifier).iniciar(email, _contrasena.text);
+          return;
+        }
+        final enviado = resultado == ResultadoRegistro.correoEnviado;
         setState(() {
           _registro = false;
           _puedeReenviar = true;

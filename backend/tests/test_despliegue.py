@@ -77,11 +77,9 @@ def _produccion(**cambios) -> Settings:
         openai_api_key="clave-de-prueba",
         cloudflare_account_id="cuenta",
         cloudflare_api_token="token-de-prueba",
-        proveedor_correo="smtp",
-        smtp_host="smtp-relay.brevo.com",
-        smtp_usuario="usuario@smtp-brevo.com",
-        smtp_contrasena="clave-smtp-de-prueba",
-        smtp_remitente="StoryDraw <hola@ejemplo.com>",
+        # Sin correo por ahora: la cuenta nace confirmada (Brevo queda para más adelante)
+        proveedor_correo="ninguno",
+        verificar_correo=False,
         almacen="s3",
         s3_endpoint_url="https://s3.hf.co/josuehmz",
         s3_region="us-east-1",
@@ -95,9 +93,10 @@ def _produccion(**cambios) -> Settings:
     return Settings(_env_file=None, **datos)
 
 
-def test_la_configuracion_del_space_es_valida_y_sin_voz():
+def test_la_configuracion_del_space_es_valida_sin_voz_ni_correo():
     s = _produccion()
     assert s.proveedor_voz == "ninguno"
+    assert (s.proveedor_correo, s.verificar_correo) == ("ninguno", False)
     assert s.lista_cors == ["https://josuehmz.github.io"]
     assert s.s3_estilo_direccion == "path"
 

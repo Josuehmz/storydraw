@@ -27,7 +27,7 @@ class CuentasRepositorioApi implements CuentasRepositorio {
   }
 
   @override
-  Future<bool> registrar({
+  Future<ResultadoRegistro> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
@@ -40,7 +40,11 @@ class CuentasRepositorioApi implements CuentasRepositorio {
         'acepta_consentimiento': aceptaConsentimiento,
       },
     );
-    return r.data?['correo_enviado'] as bool? ?? true;
+    final datos = r.data ?? const <String, dynamic>{};
+    if (datos['verificado'] == true) return ResultadoRegistro.listaParaEntrar;
+    return (datos['correo_enviado'] as bool? ?? true)
+        ? ResultadoRegistro.correoEnviado
+        : ResultadoRegistro.correoNoSalio;
   });
 
   @override

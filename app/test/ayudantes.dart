@@ -97,20 +97,25 @@ class EnlacesFalso implements EnlacesApp {
 /// Cuentas sin red: anota lo que se le pide y deja simular errores.
 class CuentasRepositorioFalso implements CuentasRepositorio {
   bool correoEnviado = true;
+
+  /// Si se fija, manda sobre [correoEnviado] (p. ej. `listaParaEntrar`).
+  ResultadoRegistro? resultadoRegistro;
+  final entradas = <String>[];
   ErrorApi? errorAlRegistrar;
   ErrorApi? errorAlEntrar;
   final registrados = <String>[];
   final reenviados = <String>[];
 
   @override
-  Future<bool> registrar({
+  Future<ResultadoRegistro> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
   }) async {
     registrados.add(email);
     if (errorAlRegistrar != null) throw errorAlRegistrar!;
-    return correoEnviado;
+    return resultadoRegistro ??
+        (correoEnviado ? ResultadoRegistro.correoEnviado : ResultadoRegistro.correoNoSalio);
   }
 
   @override
@@ -120,6 +125,7 @@ class CuentasRepositorioFalso implements CuentasRepositorio {
   @override
   Future<void> iniciarSesion({required String email, required String contrasena}) async {
     if (errorAlEntrar != null) throw errorAlEntrar!;
+    entradas.add(email);
   }
 
   @override

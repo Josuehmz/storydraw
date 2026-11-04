@@ -13,6 +13,7 @@ import 'package:storydraw/data/cache_cuentos.dart';
 import 'package:storydraw/data/repositorios_api.dart';
 import 'package:storydraw/data/sesion_local.dart';
 import 'package:storydraw/domain/entidades.dart';
+import 'package:storydraw/domain/repositorios.dart';
 
 /// Adaptador HTTP falso: responde según la ruta y registra cada petición.
 class AdaptadorFalso implements HttpClientAdapter {
@@ -294,6 +295,33 @@ void main() {
     expect(cache.contiene('c1'), isFalse);
     expect(cache.dePerfil('p1'), isEmpty);
     expect([sesion.token, sesion.perfilId], [null, null]);
+  });
+
+  test('el registro distingue correo enviado, correo que no salió y cuenta lista', () async {
+    SharedPreferences.setMockInitialValues({});
+    final cuentas = CuentasRepositorioApi(
+      dio,
+      SesionLocal(await SharedPreferences.getInstance()),
+      cache,
+    );
+    Future<ResultadoRegistro> con(Map<String, dynamic> respuesta) {
+      http.manejar = (o) => json(respuesta, 201);
+      return cuentas.registrar(email: 'a@b.com', contrasena: 'x' * 12, aceptaConsentimiento: true);
+    }
+
+    expect(
+      await con({'verificado': false, 'correo_enviado': true}),
+      ResultadoRegistro.correoEnviado,
+    );
+    expect(
+      await con({'verificado': false, 'correo_enviado': false}),
+      ResultadoRegistro.correoNoSalio,
+    );
+    // VERIFICAR_CORREO=false en el servidor: la cuenta nace confirmada
+    expect(
+      await con({'verificado': true, 'correo_enviado': false}),
+      ResultadoRegistro.listaParaEntrar,
+    );
   });
 
   test('la sesión guarda el token y el perfil en SharedPreferences', () async {

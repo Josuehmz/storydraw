@@ -70,8 +70,10 @@ async def registrar(
         c.hasher.hashear(datos.contrasena),
         _rol_para(c, datos.email),
         c.settings.version_consentimiento,
+        # Sin verificación por correo, la cuenta nace confirmada y no se manda nada.
+        verificado=not c.settings.verificar_correo,
     )
-    enviado = await _enviar_verificacion(c, tutor)
+    enviado = await _enviar_verificacion(c, tutor) if c.settings.verificar_correo else False
     return RegistroSalida(
         id=tutor.id,
         email=tutor.email,
@@ -124,6 +126,8 @@ async def reenviar(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> dict:
+    if not c.settings.verificar_correo:
+        return {"enviado": False}
     tutor = await repo.tutor_por_email(datos.email)
     if (
         tutor
@@ -145,7 +149,7 @@ async def login(
     tutor = await repo.tutor_por_email(datos.email)
     if tutor is None or not c.hasher.verificar(tutor.hash_contrasena, datos.contrasena):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "credenciales_invalidas")
-    if not tutor.verificado:
+    if c.settings.verificar_correo and not tutor.verificado:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "correo_sin_verificar")
     rol = _rol_para(c, tutor.email)
     if rol != tutor.rol:

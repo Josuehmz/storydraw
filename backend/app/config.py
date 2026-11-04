@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     jwt_secreto: SecretStr = Field(..., min_length=32)
     jwt_minutos: int = 60 * 24
     verificacion_horas: int = 48
+    # false = la cuenta queda confirmada al crearla y se puede entrar sin el correo de
+    # verificación (p. ej. un piloto sin SMTP). El consentimiento sigue siendo obligatorio.
+    verificar_correo: bool = True
     # Dominios que pueden crear cuenta, separados por coma. Vacío = cualquiera (por defecto:
     # limitarlo a Gmail y Hotmail es una decisión pendiente; se enciende con gmail.com,hotmail.com).
     dominios_correo: str = ""
@@ -71,7 +74,8 @@ class Settings(BaseSettings):
     proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
     # cloudflare = MeloTTS (gratis dentro de las neuronas); ninguno = el cuento sale sin audio
     proveedor_voz: Literal["cloudflare", "ninguno", "falso"] = "ninguno"
-    proveedor_correo: Literal["smtp", "falso"] = "smtp"
+    # ninguno = no se manda ningún correo (exige VERIFICAR_CORREO=false)
+    proveedor_correo: Literal["smtp", "ninguno", "falso"] = "smtp"
     almacen: Literal["s3", "memoria"] = "s3"
 
     # OpenAI: visión, cuento, moderación e imagen con una sola clave
@@ -210,6 +214,11 @@ class Settings(BaseSettings):
             self.cloudflare_account_id and self.cloudflare_api_token
         ):
             raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")
+        if self.proveedor_correo == "ninguno" and self.verificar_correo:
+            raise ValueError(
+                "Con PROVEEDOR_CORREO=ninguno nadie podría confirmar su cuenta: "
+                "pon VERIFICAR_CORREO=false o configura SMTP"
+            )
         if self.proveedor_correo == "smtp" and not (self.smtp_host and self.smtp_remitente):
             raise ValueError("Faltan SMTP_HOST y SMTP_REMITENTE")
         if self.almacen == "s3" and not (self.s3_access_key and self.s3_secret_key):

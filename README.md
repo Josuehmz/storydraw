@@ -158,7 +158,7 @@ En Linux o macOS, el intérprete es `.venv/bin/python`.
 ### Cuentas y correo de confirmación
 
 1. **Dominios permitidos**: por defecto cualquier correo puede crear cuenta (`DOMINIOS_CORREO` vacío). Para limitarlo a Gmail y Hotmail, `DOMINIOS_CORREO=gmail.com,hotmail.com` en el backend y la app compilada con `--dart-define=DOMINIOS_CORREO=gmail.com,hotmail.com`, para que avise antes de enviar. El dominio debe coincidir entero, así que `x@gmail.com.evil.com` no pasa. Otro dominio recibe `422 dominio_no_permitido` y no se crea nada. El inicio de sesión no filtra dominios.
-2. El registro manda un correo (texto y HTML) con un botón **Confirmar mi correo**. Si el correo no puede salir, la cuenta igual se crea y la respuesta trae `correo_enviado: false`; la app ofrece **Reenviar correo** (`POST /v1/auth/reenviar-verificacion`, pide la contraseña). Sin correo confirmado no hay login (`403 correo_sin_verificar`).
+2. El registro manda un correo (texto y HTML) con un botón **Confirmar mi correo**. Si el correo no puede salir, la cuenta igual se crea y la respuesta trae `correo_enviado: false`; la app ofrece **Reenviar correo** (`POST /v1/auth/reenviar-verificacion`, pide la contraseña). Sin correo confirmado no hay login (`403 correo_sin_verificar`). Con `VERIFICAR_CORREO=false` (y `PROVEEDOR_CORREO=ninguno`, sin SMTP) la cuenta nace confirmada, no se manda ningún correo y la app entra directo al crearla; el consentimiento sigue siendo obligatorio.
 3. El enlace del correo (`GET /v1/auth/verificar?token=...`) confirma la cuenta y, si lo abre un navegador, muestra una página que **abre la app sola** con `storydraw://verificado?email=...` (con un botón grande por si el navegador lo bloquea). La app cae en «Entrar» con el correo escrito y el aviso «¡Correo confirmado!». Un cliente que no sea navegador recibe JSON. Tocar el enlace dos veces es inofensivo.
 4. Al iniciar sesión se olvida el perfil guardado y al cerrarla se borran del teléfono los cuentos guardados, para que dos cuentas en el mismo teléfono nunca se mezclen.
 
@@ -201,7 +201,7 @@ flutter run --dart-define=API_URL=http://10.0.2.2:8000 --dart-define=MODO_INVITA
 
 Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto como referencia). Las vacías toman el valor por defecto de `backend/app/config.py`.
 
-- General: `ENTORNO`, `URL_PUBLICA`, `DOMINIOS_CORREO`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
+- General: `ENTORNO`, `URL_PUBLICA`, `DOMINIOS_CORREO`, `VERIFICAR_CORREO`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
 - Modo invitado (solo pruebas locales): `PERMITIR_INVITADOS`, `INVITADO_MINUTOS`, `INVITADO_RETENCION_MINUTOS`
 - Base de datos: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`
 - Proveedores: `PROVEEDOR_VISION`, `PROVEEDOR_TEXTO`, `PROVEEDOR_MODERACION`, `PROVEEDOR_IMAGEN`, `PROVEEDOR_CORREO`, `ALMACEN`
