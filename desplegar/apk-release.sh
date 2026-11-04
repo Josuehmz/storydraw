@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Compila el APK de release de StoryDraw, firmado con el keystore propio de Josue.
 #
-# Uso:  desplegar/apk-release.sh https://<usuario>-<space>.hf.space
+# Uso:  desplegar/apk-release.sh https://<servicio>.onrender.com
 #
 # Necesita app/android/key.properties (fuera de git), que apunta al keystore creado según
 # la guía de despliegue. Este script no crea claves ni las imprime: solo comprueba que el APK
@@ -10,7 +10,7 @@ set -euo pipefail
 
 API_URL="${1:-}"
 if [[ "$API_URL" != https://* ]]; then
-  echo "Uso: $0 https://<usuario>-<space>.hf.space   (el release solo habla https)" >&2
+  echo "Uso: $0 https://<servicio>.onrender.com   (el release solo habla https)" >&2
   exit 2
 fi
 

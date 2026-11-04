@@ -1,5 +1,5 @@
-"""Despliegue gratuito: Neon (Postgres), Storage Bucket de Hugging Face (S3) y la configuración
-de producción tal como queda en el Space.
+"""Despliegue gratuito: Render (Blueprint `render.yaml`, imagen sin rembg), Neon (Postgres) y el
+Storage Bucket privado de Hugging Face (S3).
 
 Las pruebas contra MinIO real solo corren si se define STORYDRAW_MINIO_URL (con
 STORYDRAW_MINIO_USUARIO y STORYDRAW_MINIO_CLAVE); el resto no toca la red.
@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
+import sys
+import textwrap
 import uuid
+from pathlib import Path
 
 import pytest
+import yaml
 from botocore.awsrequest import AWSResponse
 from botocore.exceptions import ClientError
 from botocore.stub import Stubber
@@ -62,43 +67,124 @@ def test_la_clave_con_caracteres_especiales_sobrevive():
 # ------------------------------------------------------------------ configuración
 
 
+RAIZ = Path(__file__).resolve().parents[2]
+BLUEPRINT = yaml.safe_load((RAIZ / "render.yaml").read_text(encoding="utf-8"))
+SERVICIO = BLUEPRINT["services"][0]
+SECRETOS = {
+    "DATABASE_URL",
+    "JWT_SECRETO",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "OPENAI_API_KEY",
+    "S3_ACCESS_KEY",
+    "S3_SECRET_KEY",
+    "ADMIN_EMAILS",
+}
+
+
+def _fijas_del_blueprint() -> dict[str, str]:
+    return {v["key"]: str(v["value"]) for v in SERVICIO["envVars"] if "value" in v}
+
+
 def _produccion(**cambios) -> Settings:
-    """La configuración del Space según la guía de despliegue, con valores de mentira."""
-    datos = dict(
-        entorno="produccion",
-        database_url="postgresql://u:c@ep-x.neon.tech/neondb?sslmode=require&channel_binding=require",
-        url_publica="https://josuehmz-storydraw-api.hf.space",
-        cors_origenes="https://josuehmz.github.io",
+    """La configuración de Render: las variables fijas del Blueprint más secretos de mentira."""
+    datos = {k.lower(): v for k, v in _fijas_del_blueprint().items()}
+    datos.update(
+        database_url="postgresql://u:***@ep-x.neon.tech/neondb?sslmode=require&channel_binding=require",
+        url_publica="https://storydraw-api.onrender.com",
+        cors_origenes="https://storydraw-api.onrender.com,https://josuehmz.github.io",
         jwt_secreto="s" * 48,
-        proveedor_vision="cloudflare",
-        proveedor_texto="cloudflare",
-        proveedor_imagen="cloudflare",
-        proveedor_moderacion="openai",
         openai_api_key="clave-de-prueba",
         cloudflare_account_id="cuenta",
         cloudflare_api_token="token-de-prueba",
-        # Sin correo por ahora: la cuenta nace confirmada (Brevo queda para más adelante)
-        proveedor_correo="ninguno",
-        verificar_correo=False,
-        almacen="s3",
-        s3_endpoint_url="https://s3.hf.co/josuehmz",
-        s3_region="us-east-1",
-        s3_bucket="storydraw-imagenes",
         s3_access_key="HFAK-de-prueba",
         s3_secret_key="secreto-de-prueba",
-        s3_cifrado_sse=False,
-        s3_checksum="when_required",
     )
     datos.update(cambios)
     return Settings(_env_file=None, **datos)
 
 
-def test_la_configuracion_del_space_es_valida_sin_voz_ni_correo():
+def test_la_configuracion_de_render_es_valida_sin_voz_ni_correo_ni_rembg():
     s = _produccion()
+    assert s.entorno == "produccion"
     assert s.proveedor_voz == "ninguno"
     assert (s.proveedor_correo, s.verificar_correo) == ("ninguno", False)
-    assert s.lista_cors == ["https://josuehmz.github.io"]
-    assert s.s3_estilo_direccion == "path"
+    assert s.recorte == "umbral"
+    assert s.lista_cors == ["https://storydraw-api.onrender.com", "https://josuehmz.github.io"]
+    assert (s.s3_endpoint_url, s.s3_bucket) == ("https://s3.hf.co/Josuehmz", "StoryDraw")
+    assert (s.s3_estilo_direccion, s.s3_checksum, s.s3_cifrado_sse) == (
+        "path",
+        "when_required",
+        False,
+    )
+
+
+# ------------------------------------------------------------------ Render y la imagen
+
+
+def test_el_blueprint_es_un_web_service_docker_gratis_con_salud():
+    assert len(BLUEPRINT["services"]) == 1
+    assert SERVICIO["type"] == "web" and SERVICIO["runtime"] == "docker"
+    assert SERVICIO["plan"] == "free"
+    assert SERVICIO["rootDir"] == "backend"
+    assert SERVICIO["healthCheckPath"] == "/salud"
+    # dockerfilePath y dockerContext se cuentan desde la raíz del repo, no desde rootDir
+    assert (RAIZ / SERVICIO["dockerfilePath"]).resolve() == RAIZ / "backend" / "Dockerfile"
+    assert (RAIZ / SERVICIO["dockerContext"]).resolve() == RAIZ / "backend"
+
+
+def test_el_blueprint_no_lleva_secretos_y_los_pide_en_el_panel():
+    variables = {v["key"]: v for v in SERVICIO["envVars"]}
+    for clave in SECRETOS:
+        assert variables[clave] == {"key": clave, "sync": False}, clave
+    # Ningún valor fijo se parece a una clave
+    for clave, valor in _fijas_del_blueprint().items():
+        assert clave not in SECRETOS
+        assert not any(p in clave for p in ("TOKEN", "KEY", "SECRET", "CONTRASENA")), clave
+        assert len(valor) < 40, clave
+    assert "PORT" not in variables  # lo pone Render
+
+
+def test_la_imagen_de_produccion_va_sin_rembg():
+    backend = RAIZ / "backend"
+    assert "rembg" not in (backend / "requirements.txt").read_text(encoding="utf-8")
+    assert "rembg[cpu]==" in (backend / "requirements-rembg.txt").read_text(encoding="utf-8")
+    dockerfile = (backend / "Dockerfile").read_text(encoding="utf-8")
+    assert "ARG CON_REMBG=0" in dockerfile
+    compose = yaml.safe_load((RAIZ / "docker-compose.yml").read_text(encoding="utf-8"))
+    assert compose["services"]["api"]["build"]["args"]["CON_REMBG"] == "1"
+
+
+def test_con_recorte_por_umbral_arrancar_no_importa_rembg():
+    """En un proceso nuevo: construir la app y recortar un dibujo no carga rembg ni onnxruntime."""
+    codigo = textwrap.dedent(
+        """
+        import io, sys
+        from PIL import Image
+        from app.config import Settings
+        from app.contenedor import construir
+        from app.main import create_app
+        s = Settings(_env_file=None, jwt_secreto="s" * 48, almacen="memoria", recorte="umbral",
+            **{f"proveedor_{c}": "falso" for c in ("vision", "texto", "moderacion", "imagen",
+               "correo")})
+        c = construir(s)
+        create_app(s, c)
+        img = Image.new("RGB", (64, 64), "white")
+        img.paste((0, 0, 0), (10, 10, 40, 40))
+        b = io.BytesIO(); img.save(b, format="PNG")
+        assert c.orquestador.compositor.recortar(b.getvalue())
+        print(sorted(m for m in sys.modules if m.split(".")[0] in ("rembg", "onnxruntime")))
+        """
+    )
+    r = subprocess.run(  # noqa: S603 (código fijo de la prueba)
+        [sys.executable, "-c", codigo],
+        cwd=RAIZ / "backend",
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().splitlines()[-1] == "[]"
 
 
 def test_por_defecto_el_s3_se_comporta_como_antes():

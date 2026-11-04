@@ -2,7 +2,7 @@
 #
 # Antes de que funcione (una sola vez, según la guía de despliegue):
 #   - Settings → Pages → Source: «GitHub Actions».
-#   - Settings → Secrets and variables → Actions → Variables: API_URL = URL https del Space.
+#   - Settings → Secrets and variables → Actions → Variables: API_URL = URL https del backend en Render.
 # No usa tokens propios: el GITHUB_TOKEN del workflow basta para Pages.
 name: Web en GitHub Pages
 
@@ -34,7 +34,7 @@ jobs:
           API_URL: ${{ vars.API_URL }}
         run: |
           if [[ -z "$API_URL" || "$API_URL" != https://* ]]; then
-            echo "::error::Falta la variable API_URL (https://<usuario>-<space>.hf.space) en Settings → Variables."
+            echo "::error::Falta la variable API_URL (https://<servicio>.onrender.com) en Settings → Variables."
             exit 1
           fi
 

@@ -1,0 +1,4 @@
+# Recorte con rembg (RECORTE=rembg): onnxruntime y el modelo u2net (~170 MB al primer uso).
+# No va en la imagen de producción (Render Free, 512 MB): allí RECORTE=umbral.
+# La imagen lo instala con el build arg CON_REMBG=1 (docker compose local lo pone).
+rembg[cpu]==2.0.69
