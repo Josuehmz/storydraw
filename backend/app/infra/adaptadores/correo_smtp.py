@@ -1,4 +1,5 @@
-"""Adaptador de correo: SMTP transaccional (STARTTLS, TLS directo o sin cifrar en local)."""
+"""Adaptadores de correo: SMTP transaccional (STARTTLS, TLS directo o sin cifrar en local) y
+apagado (`PROVEEDOR_CORREO=ninguno`)."""
 
 from __future__ import annotations
 
@@ -56,3 +57,13 @@ class CorreoSMTP(ICorreo):
         if html:
             mensaje.add_alternative(html, subtype="html")
         await asyncio.to_thread(self._enviar, mensaje)
+
+
+class CorreoApagado(ICorreo):
+    """`PROVEEDOR_CORREO=ninguno`: no manda nada. Solo se permite con `VERIFICAR_CORREO=false`,
+    así que nadie espera un correo que no va a llegar."""
+
+    proveedor = "ninguno"
+
+    async def enviar(self, para: str, asunto: str, cuerpo: str, html: str | None = None) -> None:
+        return None

@@ -4,6 +4,10 @@
 !.env.example
 *.pem
 *.key
+# Firma del APK de release: nunca en git
+key.properties
+*.jks
+*.keystore
 
 # Python
 .venv/

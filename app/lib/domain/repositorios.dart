@@ -5,10 +5,21 @@ import 'entidades.dart';
 /// Contratos que la interfaz usa. Las implementaciones viven en `data/`;
 /// la presentación nunca habla con Dio ni con Hive directamente.
 
+/// Qué pasó al crear la cuenta.
+enum ResultadoRegistro {
+  /// Salió el correo de confirmación: hay que abrirlo antes de entrar.
+  correoEnviado,
+
+  /// La cuenta quedó creada pero el correo no salió: se puede pedir que se reenvíe.
+  correoNoSalio,
+
+  /// El servidor no pide confirmar el correo (`VERIFICAR_CORREO=false`): se puede entrar ya.
+  listaParaEntrar,
+}
+
 abstract interface class CuentasRepositorio {
-  /// Crea la cuenta. Devuelve `false` si la cuenta quedó creada pero el correo de
-  /// confirmación no pudo salir (el adulto puede pedir que se reenvíe).
-  Future<bool> registrar({
+  /// Crea la cuenta (siempre con el consentimiento del adulto).
+  Future<ResultadoRegistro> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
