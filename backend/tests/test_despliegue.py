@@ -63,7 +63,7 @@ def test_la_clave_con_caracteres_especiales_sobrevive():
 
 
 def _produccion(**cambios) -> Settings:
-    """La configuración del Space según docs/DESPLIEGUE.md, con valores de mentira."""
+    """La configuración del Space según la guía de despliegue, con valores de mentira."""
     datos = dict(
         entorno="produccion",
         database_url="postgresql://u:c@ep-x.neon.tech/neondb?sslmode=require&channel_binding=require",

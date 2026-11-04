@@ -15,5 +15,5 @@ Backend FastAPI de [StoryDraw](https://github.com/Josuehmz/storydraw). Este Spac
 actualiza con `desplegar/subir-space.sh` desde el repositorio; no se edita aquí.
 
 - Salud: `GET /salud`
-- Configuración: variables y secretos del Space, según `docs/DESPLIEGUE.md` del repositorio.
+- Configuración: variables y secretos del Space, según la guía de despliegue.
   Ninguna clave va en los archivos de este Space.

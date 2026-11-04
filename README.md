@@ -9,7 +9,7 @@ El repositorio tiene dos partes:
 
 Los prompts con los que se encargó la creación inicial del proyecto están en [`docs/prompts/`](docs/prompts/00-indice.md).
 
-El despliegue gratuito (Hugging Face Space, Neon, bucket privado de Hugging Face, GitHub Pages y Brevo) está paso a paso en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+El despliegue gratuito usa un Hugging Face Space (Docker), Neon, un bucket privado de Hugging Face, GitHub Pages y Brevo. Los scripts están en `desplegar/` y el workflow de la web, en `.github/workflows/pages.yml`; la guía con las cuentas y las variables la tiene quien despliega y no va en el repositorio.
 
 ## Arquitectura
 

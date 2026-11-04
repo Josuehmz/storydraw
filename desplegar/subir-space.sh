@@ -6,7 +6,7 @@
 #
 # Usa la sesión de `hf auth login` de quien lo corre: no lee ni guarda tokens en archivos.
 # No crea el Space: hay que crearlo antes en huggingface.co (SDK Docker, público) siguiendo
-# docs/DESPLIEGUE.md. Los secretos van en la configuración del Space, nunca aquí.
+# la guía de despliegue. Los secretos van en la configuración del Space, nunca aquí.
 set -euo pipefail
 
 SPACE_ID="${1:-}"
@@ -67,7 +67,7 @@ fi
 # (sin -o /dev/null: el curl nativo de Windows no puede escribir ahí)
 CODIGO="$(curl -s -w '\n%{http_code}' "https://huggingface.co/api/spaces/$SPACE_ID" | tail -n 1 || true)"
 if [[ "$CODIGO" != "200" ]]; then
-  echo "El Space $SPACE_ID no existe o no es público (HTTP $CODIGO). Créalo primero (docs/DESPLIEGUE.md)." >&2
+  echo "El Space $SPACE_ID no existe o no es público (HTTP $CODIGO). Créalo primero (guía de despliegue)." >&2
   exit 1
 fi
 

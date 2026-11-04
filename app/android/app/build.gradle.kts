@@ -9,7 +9,7 @@ plugins {
 
 // Firma de release: app/android/key.properties (fuera de git) apunta al keystore propio.
 // Sin ese archivo, el release se firma con la clave de depuración, sirve solo para probar y
-// desplegar/apk-release.sh se niega a compilarlo. Ver docs/DESPLIEGUE.md.
+// desplegar/apk-release.sh se niega a compilarlo.
 val propiedadesFirma = Properties()
 val archivoFirma = rootProject.file("key.properties")
 val hayFirmaPropia = archivoFirma.exists()

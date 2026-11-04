@@ -4,7 +4,7 @@
 !.env.example
 *.pem
 *.key
-# Firma del APK de release: nunca en git (docs/DESPLIEGUE.md)
+# Firma del APK de release: nunca en git
 key.properties
 *.jks
 *.keystore

@@ -4,7 +4,7 @@
 # Uso:  desplegar/apk-release.sh https://<usuario>-<space>.hf.space
 #
 # Necesita app/android/key.properties (fuera de git), que apunta al keystore creado según
-# docs/DESPLIEGUE.md. Este script no crea claves ni las imprime: solo comprueba que el APK
+# la guía de despliegue. Este script no crea claves ni las imprime: solo comprueba que el APK
 # salga firmado con ese keystore y no con la clave de depuración.
 set -euo pipefail
 
@@ -19,7 +19,7 @@ APP="$RAIZ/app"
 PROPIEDADES="$APP/android/key.properties"
 if [[ ! -f "$PROPIEDADES" ]]; then
   echo "Falta app/android/key.properties: sin él, el APK saldría con la clave de depuración." >&2
-  echo "Créalo siguiendo docs/DESPLIEGUE.md (sección «APK de release»)." >&2
+  echo "Créalo según la guía de despliegue (sección «APK de release»)." >&2
   exit 1
 fi
 for clave in storeFile storePassword keyAlias keyPassword; do
