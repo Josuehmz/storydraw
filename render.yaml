@@ -27,8 +27,6 @@ services:
         sync: false
       - key: CLOUDFLARE_API_TOKEN
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
       - key: S3_ACCESS_KEY
         sync: false
       - key: S3_SECRET_KEY
@@ -49,8 +47,9 @@ services:
         value: cloudflare
       - key: PROVEEDOR_IMAGEN
         value: cloudflare
+      # Sin OpenAI: Llama Guard + revisión infantil, ambas en Cloudflare Workers AI
       - key: PROVEEDOR_MODERACION
-        value: openai
+        value: llamaguard
       # Sin correo por ahora: la cuenta nace confirmada
       - key: PROVEEDOR_CORREO
         value: ninguno

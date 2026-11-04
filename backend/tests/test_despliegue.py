@@ -75,7 +75,6 @@ SECRETOS = {
     "JWT_SECRETO",
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
-    "OPENAI_API_KEY",
     "S3_ACCESS_KEY",
     "S3_SECRET_KEY",
     "ADMIN_EMAILS",
@@ -94,7 +93,6 @@ def _produccion(**cambios) -> Settings:
         url_publica="https://storydraw-api.onrender.com",
         cors_origenes="https://storydraw-api.onrender.com,https://josuehmz.github.io",
         jwt_secreto="s" * 48,
-        openai_api_key="clave-de-prueba",
         cloudflare_account_id="cuenta",
         cloudflare_api_token="token-de-prueba",
         s3_access_key="HFAK-de-prueba",
@@ -110,6 +108,9 @@ def test_la_configuracion_de_render_es_valida_sin_voz_ni_correo_ni_rembg():
     assert s.proveedor_voz == "ninguno"
     assert (s.proveedor_correo, s.verificar_correo) == ("ninguno", False)
     assert s.recorte == "umbral"
+    # Sin OpenAI: la moderación de producción es Llama Guard + revisión infantil
+    assert s.proveedor_moderacion == "llamaguard" and s.openai_api_key is None
+    assert "OPENAI_API_KEY" not in {v["key"] for v in SERVICIO["envVars"]}
     assert s.lista_cors == ["https://storydraw-api.onrender.com", "https://josuehmz.github.io"]
     assert (s.s3_endpoint_url, s.s3_bucket) == ("https://s3.hf.co/Josuehmz", "StoryDraw")
     assert (s.s3_estilo_direccion, s.s3_checksum, s.s3_cifrado_sse) == (
