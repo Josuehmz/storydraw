@@ -9,6 +9,8 @@ El repositorio tiene dos partes:
 
 Los prompts con los que se encargó la creación inicial del proyecto están en [`docs/prompts/`](docs/prompts/00-indice.md).
 
+El despliegue gratuito (Hugging Face Space, Neon, bucket privado de Hugging Face, GitHub Pages y Brevo) está paso a paso en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+
 ## Arquitectura
 
 Sigue los diagramas de arquitectura del proyecto (vista única, componentes UML y despliegue).
@@ -207,7 +209,7 @@ Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto
 - Ollama: `OLLAMA_URL`, `OLLAMA_MODELO_TEXTO`, `OLLAMA_MODELO_VISION`, `OLLAMA_MODELO_MODERACION`, `OLLAMA_TIMEOUT_S`
 - OpenAI: `OPENAI_API_KEY`, `OPENAI_MODELO_VISION`, `OPENAI_MODELO_TEXTO`, `OPENAI_MODELO_MODERACION`, `OPENAI_MODELO_IMAGEN`, `OPENAI_CALIDAD_IMAGEN`, `OPENAI_TAMANO_IMAGEN`, `OPENAI_ESFUERZO_RAZONAMIENTO`
 - Correo: `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CONTRASENA`, `SMTP_REMITENTE`, `SMTP_SEGURIDAD`
-- Almacén: `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_CIFRADO_SSE`
+- Almacén: `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_CIFRADO_SSE`, `S3_ESTILO_DIRECCION`, `S3_CHECKSUM`
 - Composición: `RECORTE`
 - Orquestador: `REINTENTOS_POR_PASO`, `ESPERA_REINTENTO_S`, `MAX_REGENERACIONES`, `TIMEOUT_PROVEEDOR_S`, `TIEMPO_MAXIMO_CUENTO_S`
 - Límite de tasa: `LIMITE_AUTH`, `LIMITE_IDENTIFICAR`, `LIMITE_CUENTOS_IP`, `LIMITE_CUENTOS_CUENTA`, `LIMITE_INVITADO_IP`, `LIMITE_TASA_ALMACEN`
@@ -221,13 +223,16 @@ Las claves viven solo en el `.env` del servidor. La app no lleva ninguna.
 cd backend
 .venv/Scripts/python.exe -m pytest        # adaptadores falsos y SQLite: no necesita Docker ni claves
 .venv/Scripts/python.exe -m ruff check .
+# Opcional: el adaptador S3 contra un MinIO real (con las opciones de Hugging Face y las de siempre)
+STORYDRAW_MINIO_URL=http://localhost:9000 STORYDRAW_MINIO_USUARIO=<usuario> STORYDRAW_MINIO_CLAVE=<clave> \
+  .venv/Scripts/python.exe -m pytest tests/test_despliegue.py
 
 cd ../app
 flutter analyze
 flutter test
 ```
 
-- Backend: registro con consentimiento, verificación por correo (página que abre la app, reenvío y dominios permitidos) y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; la narración (audio por página, ruta de audio, voz apagada y voz caída sin romper el cuento, nada se narra si se rechaza, borrado con el cuento) y su adaptador de Cloudflare con la conversión de WAV a MP3; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; el timeout propio del adaptador; y el modo invitado (apagado por defecto, rechazado en producción, moderado, sin dejar el cuento en la base de datos ni en el almacén, aislado entre invitados y con límite por IP).
+- Backend: registro con consentimiento, verificación por correo (página que abre la app, reenvío y dominios permitidos) y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; la narración (audio por página, ruta de audio, voz apagada y voz caída sin romper el cuento, nada se narra si se rechaza, borrado con el cuento) y su adaptador de Cloudflare con la conversión de WAV a MP3; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; el timeout propio del adaptador; el despliegue (la URL de Neon para asyncpg, la configuración del Space y el S3 de Hugging Face sin sumas ni SSE y con borrado uno por uno); y el modo invitado (apagado por defecto, rechazado en producción, moderado, sin dejar el cuento en la base de datos ni en el almacén, aislado entre invitados y con límite por IP).
 - App: widgets del lienzo (con la pista del lienzo vacío), la identificación, el visor (texto, imagen y botón de escuchar), la biblioteca, los perfiles (estado vacío con «Crear el primer dibujante» y tarjetas con lápiz) y el acceso (logo, el botón de invitado solo con `MODO_INVITADO`, reenvío del correo de confirmación y regreso desde el enlace); el flujo con Riverpod; y los repositorios contra un adaptador HTTP falso con Hive real (caché, lectura sin conexión, sincronización, borrado y reintentos; y en modo invitado, perfiles y cuentos solo locales y renovación del token).
 
 ## Estado y pendientes
