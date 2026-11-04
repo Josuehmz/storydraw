@@ -70,7 +70,9 @@ class Settings(BaseSettings):
     proveedor_vision: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
     proveedor_texto: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
     # ollama y cloudflare en moderación usan un LLM genérico: SOLO DESARROLLO
-    proveedor_moderacion: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
+    proveedor_moderacion: Literal["openai", "llamaguard", "cloudflare", "ollama", "falso"] = (
+        "openai"
+    )
     proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
     # cloudflare = MeloTTS (gratis dentro de las neuronas); ninguno = el cuento sale sin audio
     proveedor_voz: Literal["cloudflare", "ninguno", "falso"] = "ninguno"
@@ -94,6 +96,8 @@ class Settings(BaseSettings):
     cloudflare_modelo_vision: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_texto: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_moderacion: str = "@cf/google/gemma-4-26b-a4b-it"
+    # Clasificador para PROVEEDOR_MODERACION=llamaguard (va junto a la revisión infantil)
+    cloudflare_modelo_guardia: str = "@cf/meta/llama-guard-3-8b"
     cloudflare_modelo_imagen: str = "@cf/black-forest-labs/flux-1-schnell"
     cloudflare_pasos_imagen: int = Field(4, ge=1, le=8)
     # Envía chat_template_kwargs.enable_thinking=false (Gemma 4, Qwen 3). Ponlo en false
@@ -199,7 +203,7 @@ class Settings(BaseSettings):
             if self.proveedor_moderacion in ("ollama", "cloudflare"):
                 raise ValueError(
                     "La moderación con LLM genérico es solo para desarrollo: "
-                    "en producción usa PROVEEDOR_MODERACION=openai"
+                    "en producción usa PROVEEDOR_MODERACION=openai o llamaguard"
                 )
         proveedores = (
             self.proveedor_vision,
@@ -210,7 +214,7 @@ class Settings(BaseSettings):
         )
         if "openai" in proveedores and not self.openai_api_key:
             raise ValueError("Falta OPENAI_API_KEY (o usa PROVEEDOR_*=falso en desarrollo)")
-        if "cloudflare" in proveedores and not (
+        if ("cloudflare" in proveedores or self.proveedor_moderacion == "llamaguard") and not (
             self.cloudflare_account_id and self.cloudflare_api_token
         ):
             raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")

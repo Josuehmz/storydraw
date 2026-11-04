@@ -19,6 +19,10 @@ from app.dominio.moderacion import Moderacion
 from app.dominio.puertos import SolicitudCuento
 from app.infra.adaptadores.comun import ESQUEMA_CUENTO, ErrorProveedor
 from app.infra.adaptadores.falsos import TextoFalso
+from app.infra.adaptadores.moderacion_llama_guard import (
+    ModeracionLlamaGuard,
+    leer_veredicto_guardia,
+)
 from app.infra.adaptadores.moderacion_llm import ModeracionLLMSoloDesarrollo
 from app.infra.adaptadores.proveedor_cloudflare import (
     ClienteCloudflare,
@@ -482,3 +486,133 @@ def test_moderacion_llm_prohibida_en_produccion():
         with pytest.raises(ValidationError, match="solo para desarrollo"):
             _base(**produccion, proveedor_moderacion=llm)
     assert _base(**produccion, proveedor_moderacion="openai", openai_api_key="k")
+    # Llama Guard sí se admite en producción, sin clave de OpenAI
+    assert _base(**produccion, proveedor_moderacion="llamaguard")
+    sin_cf = {k: v for k, v in produccion.items() if not k.startswith("cloudflare")}
+    sin_cf.update(proveedor_vision="falso", proveedor_texto="falso", proveedor_imagen="falso")
+    with pytest.raises(ValidationError, match="CLOUDFLARE"):
+        _base(**{**sin_cf, "entorno": "desarrollo"}, proveedor_moderacion="llamaguard")
+
+
+# ------------------------------------------------------------------ Llama Guard
+
+
+def _cf_ok(respuesta: object, neuronas: float = 9.5) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "success": True,
+            "result": {
+                "response": respuesta,
+                "usage": {"prompt_tokens": 217, "completion_tokens": 3, "neurons": neuronas},
+            },
+        },
+    )
+
+
+def _guardia_y_llm(guardia: httpx.Response, llm: httpx.Response | Exception):
+    """Un transporte que responde distinto a Llama Guard y al LLM de la revisión infantil."""
+    peticiones: list[httpx.Request] = []
+
+    def manejar(request: httpx.Request) -> httpx.Response:
+        peticiones.append(request)
+        if "llama-guard" in str(request.url):
+            return guardia
+        if isinstance(llm, Exception):
+            raise llm
+        return llm
+
+    return peticiones, manejar
+
+
+def _llm_cf(contenido: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "success": True,
+            "result": {
+                "response": contenido,
+                "usage": {"prompt_tokens": 300, "completion_tokens": 20},
+            },
+        },
+    )
+
+
+def _llamaguard(http: httpx.AsyncClient) -> ModeracionLlamaGuard:
+    cliente = _cf(http)
+    return ModeracionLlamaGuard(
+        cliente,
+        "@cf/meta/llama-guard-3-8b",
+        ModeracionLLMSoloDesarrollo(cliente, "@cf/google/gemma-4-26b-a4b-it"),
+    )
+
+
+@pytest.mark.anyio
+async def test_llamaguard_aprueba_solo_si_las_dos_capas_aprueban():
+    apto = _llm_cf('{"apto": true, "categorias": []}')
+    peticiones, manejar = _guardia_y_llm(_cf_ok({"safe": True, "categories": []}), apto)
+    async with _http(manejar) as http:
+        mod = _llamaguard(http)
+        veredicto = await mod.moderar("Burbuja el pez nadó feliz.")
+    assert veredicto.aprobado is True and mod.proveedor == "cloudflare-llamaguard"
+    guardia = next(p for p in peticiones if "llama-guard-3-8b" in str(p.url))
+    cuerpo = json.loads(guardia.content)
+    assert cuerpo["messages"] == [{"role": "user", "content": "Burbuja el pez nadó feliz."}]
+    assert cuerpo["response_format"] == {"type": "json_object"}
+    assert len(peticiones) == 2  # Llama Guard y la revisión infantil
+    assert veredicto.uso.neuronas > 9.5  # suma las dos llamadas
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("guardia", "llm", "categoria"),
+    [
+        # Llama Guard marca algo
+        (
+            {"safe": False, "categories": ["S10"]},
+            '{"apto": true, "categorias": []}',
+            "llamaguard:S10",
+        ),
+        # Llama Guard lo deja pasar, pero no es para niños
+        (
+            {"safe": True, "categories": []},
+            '{"apto": false, "categorias": ["violencia"]}',
+            "llm:violencia",
+        ),
+    ],
+)
+async def test_llamaguard_rechaza_si_cualquiera_rechaza(guardia, llm, categoria):
+    _, manejar = _guardia_y_llm(_cf_ok(guardia), _llm_cf(llm))
+    async with _http(manejar) as http:
+        veredicto = await _llamaguard(http).moderar("texto")
+    assert veredicto.aprobado is False and categoria in veredicto.categorias
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "guardia",
+    [
+        {"safe": "true"},  # no es booleano
+        {"categories": []},  # sin «safe»
+        "quizás",  # texto ilegible
+        None,
+    ],
+)
+async def test_llamaguard_falla_cerrada_con_veredicto_ilegible(guardia):
+    _, manejar = _guardia_y_llm(_cf_ok(guardia), _llm_cf('{"apto": true, "categorias": []}'))
+    async with _http(manejar) as http:
+        with pytest.raises(ErrorProveedor):
+            await _llamaguard(http).moderar("texto")
+
+
+@pytest.mark.anyio
+async def test_llamaguard_falla_cerrada_si_la_revision_infantil_no_responde():
+    _, manejar = _guardia_y_llm(_cf_ok({"safe": True}), httpx.ConnectTimeout("sin red"))
+    async with _http(manejar) as http:
+        with pytest.raises(TimeoutError):
+            await _llamaguard(http).moderar("texto")
+
+
+def test_llamaguard_lee_tambien_la_respuesta_en_texto():
+    assert leer_veredicto_guardia("\n\nsafe") == (True, [])
+    assert leer_veredicto_guardia("unsafe\nS1,S10") == (False, ["S1", "S10"])
