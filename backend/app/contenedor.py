@@ -20,7 +20,7 @@ from app.dominio.moderacion import Moderacion
 from app.dominio.orquestador import Orquestador
 from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision, IVoz
 from app.infra.adaptadores.almacen import AlmacenMemoria, AlmacenS3
-from app.infra.adaptadores.correo_smtp import CorreoSMTP
+from app.infra.adaptadores.correo_smtp import CorreoApagado, CorreoSMTP
 from app.infra.adaptadores.falsos import (
     CorreoFalso,
     ImagenFalsa,
@@ -203,18 +203,21 @@ def construir(settings: Settings) -> Contenedor:
         case _:
             voz = VozNoDisponible()
 
-    correo: ICorreo = (
-        CorreoSMTP(
-            settings.smtp_host,
-            settings.smtp_puerto,
-            settings.smtp_usuario,
-            _secreto(settings.smtp_contrasena),
-            settings.smtp_remitente,
-            settings.smtp_seguridad,
-        )
-        if settings.proveedor_correo == "smtp"
-        else CorreoFalso()
-    )
+    correo: ICorreo
+    match settings.proveedor_correo:
+        case "smtp":
+            correo = CorreoSMTP(
+                settings.smtp_host,
+                settings.smtp_puerto,
+                settings.smtp_usuario,
+                _secreto(settings.smtp_contrasena),
+                settings.smtp_remitente,
+                settings.smtp_seguridad,
+            )
+        case "ninguno":
+            correo = CorreoApagado()
+        case _:
+            correo = CorreoFalso()
     almacen: IAlmacen = (
         AlmacenS3(
             settings.s3_bucket,
@@ -223,6 +226,8 @@ def construir(settings: Settings) -> Contenedor:
             settings.s3_region,
             settings.s3_endpoint_url,
             settings.s3_cifrado_sse,
+            settings.s3_estilo_direccion,
+            settings.s3_checksum,
         )
         if settings.almacen == "s3"
         else AlmacenMemoria()

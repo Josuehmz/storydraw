@@ -4,6 +4,7 @@ import 'package:storydraw/application/proveedores.dart';
 import 'package:storydraw/core/config.dart';
 import 'package:storydraw/core/correo.dart';
 import 'package:storydraw/core/errores.dart';
+import 'package:storydraw/domain/repositorios.dart';
 import 'package:storydraw/presentation/app.dart';
 
 import '../ayudantes.dart';
@@ -145,6 +146,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(cuentas.reenviados, ['ana@gmail.com']);
     expect(find.textContaining('te reenviamos el correo'), findsOneWidget);
+  });
+
+  testWidgets('si el servidor no pide confirmar el correo, crear la cuenta ya entra', (
+    tester,
+  ) async {
+    final cuentas = await abrir(tester);
+    cuentas.resultadoRegistro = ResultadoRegistro.listaParaEntrar;
+    await registrarse(tester, 'ana@gmail.com');
+    expect(cuentas.registrados, ['ana@gmail.com']);
+    expect(cuentas.entradas, ['ana@gmail.com']);
+    // Ya no está el acceso: pasó a elegir quién va a dibujar.
+    expect(find.byKey(const Key('campo-email')), findsNothing);
+    expect(find.byKey(const Key('boton-reenviar')), findsNothing);
+    expect(find.textContaining('Te enviamos un correo'), findsNothing);
   });
 
   testWidgets('si el correo no pudo salir, se avisa y se ofrece reenviar', (tester) async {

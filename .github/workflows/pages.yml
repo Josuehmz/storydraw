@@ -1,0 +1,73 @@
+# Publica la web de StoryDraw en GitHub Pages en cada push a main.
+#
+# Antes de que funcione (una sola vez, según la guía de despliegue):
+#   - Settings → Pages → Source: «GitHub Actions».
+#   - Settings → Secrets and variables → Actions → Variables: API_URL = URL https del backend en Render.
+# No usa tokens propios: el GITHUB_TOKEN del workflow basta para Pages.
+name: Web en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar API_URL
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [[ -z "$API_URL" || "$API_URL" != https://* ]]; then
+            echo "::error::Falta la variable API_URL (https://<servicio>.onrender.com) en Settings → Variables."
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.4
+          cache: true
+
+      - run: flutter pub get
+
+      - run: flutter test
+
+      - name: Compilar la web
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: >
+          flutter build web --release
+          --base-href /storydraw/
+          --dart-define=API_URL="$API_URL"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/build/web
+
+  publicar:
+    needs: compilar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - id: despliegue
+        uses: actions/deploy-pages@v4

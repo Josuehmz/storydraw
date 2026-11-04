@@ -41,7 +41,7 @@ class CuentasRepositorioInvitado implements CuentasRepositorio {
   });
 
   @override
-  Future<bool> registrar({
+  Future<ResultadoRegistro> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,

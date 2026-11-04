@@ -9,6 +9,8 @@ El repositorio tiene dos partes:
 
 Los prompts con los que se encargó la creación inicial del proyecto están en [`docs/prompts/`](docs/prompts/00-indice.md).
 
+El despliegue gratuito usa Render (Web Service con Docker, plan gratuito, descrito en `render.yaml`), Neon, un bucket privado de Hugging Face y GitHub Pages, sin correo por ahora. La imagen de producción va sin rembg (`RECORTE=umbral`; `--build-arg CON_REMBG=1` lo agrega, y docker compose lo pone). El script del APK de release está en `desplegar/` y el workflow de la web, en `.github/workflows/pages.yml`; la guía con las cuentas y las variables la tiene quien despliega y no va en el repositorio.
+
 ## Arquitectura
 
 Sigue los diagramas de arquitectura del proyecto (vista única, componentes UML y despliegue).
@@ -156,7 +158,7 @@ En Linux o macOS, el intérprete es `.venv/bin/python`.
 ### Cuentas y correo de confirmación
 
 1. **Dominios permitidos**: por defecto cualquier correo puede crear cuenta (`DOMINIOS_CORREO` vacío). Para limitarlo a Gmail y Hotmail, `DOMINIOS_CORREO=gmail.com,hotmail.com` en el backend y la app compilada con `--dart-define=DOMINIOS_CORREO=gmail.com,hotmail.com`, para que avise antes de enviar. El dominio debe coincidir entero, así que `x@gmail.com.evil.com` no pasa. Otro dominio recibe `422 dominio_no_permitido` y no se crea nada. El inicio de sesión no filtra dominios.
-2. El registro manda un correo (texto y HTML) con un botón **Confirmar mi correo**. Si el correo no puede salir, la cuenta igual se crea y la respuesta trae `correo_enviado: false`; la app ofrece **Reenviar correo** (`POST /v1/auth/reenviar-verificacion`, pide la contraseña). Sin correo confirmado no hay login (`403 correo_sin_verificar`).
+2. El registro manda un correo (texto y HTML) con un botón **Confirmar mi correo**. Si el correo no puede salir, la cuenta igual se crea y la respuesta trae `correo_enviado: false`; la app ofrece **Reenviar correo** (`POST /v1/auth/reenviar-verificacion`, pide la contraseña). Sin correo confirmado no hay login (`403 correo_sin_verificar`). Con `VERIFICAR_CORREO=false` (y `PROVEEDOR_CORREO=ninguno`, sin SMTP) la cuenta nace confirmada, no se manda ningún correo y la app entra directo al crearla; el consentimiento sigue siendo obligatorio.
 3. El enlace del correo (`GET /v1/auth/verificar?token=...`) confirma la cuenta y, si lo abre un navegador, muestra una página que **abre la app sola** con `storydraw://verificado?email=...` (con un botón grande por si el navegador lo bloquea). La app cae en «Entrar» con el correo escrito y el aviso «¡Correo confirmado!». Un cliente que no sea navegador recibe JSON. Tocar el enlace dos veces es inofensivo.
 4. Al iniciar sesión se olvida el perfil guardado y al cerrarla se borran del teléfono los cuentos guardados, para que dos cuentas en el mismo teléfono nunca se mezclen.
 
@@ -199,7 +201,7 @@ flutter run --dart-define=API_URL=http://10.0.2.2:8000 --dart-define=MODO_INVITA
 
 Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto como referencia). Las vacías toman el valor por defecto de `backend/app/config.py`.
 
-- General: `ENTORNO`, `URL_PUBLICA`, `DOMINIOS_CORREO`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
+- General: `ENTORNO`, `URL_PUBLICA`, `DOMINIOS_CORREO`, `VERIFICAR_CORREO`, `CORS_ORIGENES`, `JWT_SECRETO`, `JWT_MINUTOS`, `VERSION_CONSENTIMIENTO`, `ADMIN_EMAILS`, `CONTENIDO_EMAILS`
 - Modo invitado (solo pruebas locales): `PERMITIR_INVITADOS`, `INVITADO_MINUTOS`, `INVITADO_RETENCION_MINUTOS`
 - Base de datos: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`
 - Proveedores: `PROVEEDOR_VISION`, `PROVEEDOR_TEXTO`, `PROVEEDOR_MODERACION`, `PROVEEDOR_IMAGEN`, `PROVEEDOR_CORREO`, `ALMACEN`
@@ -207,7 +209,7 @@ Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto
 - Ollama: `OLLAMA_URL`, `OLLAMA_MODELO_TEXTO`, `OLLAMA_MODELO_VISION`, `OLLAMA_MODELO_MODERACION`, `OLLAMA_TIMEOUT_S`
 - OpenAI: `OPENAI_API_KEY`, `OPENAI_MODELO_VISION`, `OPENAI_MODELO_TEXTO`, `OPENAI_MODELO_MODERACION`, `OPENAI_MODELO_IMAGEN`, `OPENAI_CALIDAD_IMAGEN`, `OPENAI_TAMANO_IMAGEN`, `OPENAI_ESFUERZO_RAZONAMIENTO`
 - Correo: `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CONTRASENA`, `SMTP_REMITENTE`, `SMTP_SEGURIDAD`
-- Almacén: `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_CIFRADO_SSE`
+- Almacén: `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_CIFRADO_SSE`, `S3_ESTILO_DIRECCION`, `S3_CHECKSUM`
 - Composición: `RECORTE`
 - Orquestador: `REINTENTOS_POR_PASO`, `ESPERA_REINTENTO_S`, `MAX_REGENERACIONES`, `TIMEOUT_PROVEEDOR_S`, `TIEMPO_MAXIMO_CUENTO_S`
 - Límite de tasa: `LIMITE_AUTH`, `LIMITE_IDENTIFICAR`, `LIMITE_CUENTOS_IP`, `LIMITE_CUENTOS_CUENTA`, `LIMITE_INVITADO_IP`, `LIMITE_TASA_ALMACEN`
@@ -221,13 +223,16 @@ Las claves viven solo en el `.env` del servidor. La app no lleva ninguna.
 cd backend
 .venv/Scripts/python.exe -m pytest        # adaptadores falsos y SQLite: no necesita Docker ni claves
 .venv/Scripts/python.exe -m ruff check .
+# Opcional: el adaptador S3 contra un MinIO real (con las opciones de Hugging Face y las de siempre)
+STORYDRAW_MINIO_URL=http://localhost:9000 STORYDRAW_MINIO_USUARIO=<usuario> STORYDRAW_MINIO_CLAVE=<clave> \
+  .venv/Scripts/python.exe -m pytest tests/test_despliegue.py
 
 cd ../app
 flutter analyze
 flutter test
 ```
 
-- Backend: registro con consentimiento, verificación por correo (página que abre la app, reenvío y dominios permitidos) y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; la narración (audio por página, ruta de audio, voz apagada y voz caída sin romper el cuento, nada se narra si se rechaza, borrado con el cuento) y su adaptador de Cloudflare con la conversión de WAV a MP3; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; el timeout propio del adaptador; y el modo invitado (apagado por defecto, rechazado en producción, moderado, sin dejar el cuento en la base de datos ni en el almacén, aislado entre invitados y con límite por IP).
+- Backend: registro con consentimiento, verificación por correo (página que abre la app, reenvío y dominios permitidos) y login JWT; Argon2id; pipeline completo; degradación sin visión y sin imagen; capacidad apagada sin reintentos; rasgos del dibujo en el cuento; cuentos de 3 páginas exactas; la narración (audio por página, ruta de audio, voz apagada y voz caída sin romper el cuento, nada se narra si se rechaza, borrado con el cuento) y su adaptador de Cloudflare con la conversión de WAV a MP3; reintento por paso; rechazo por moderación y falla cerrada; borrado a petición (cuento, perfil y cuenta); límite de tasa por IP y por cuenta; migración de Alembic contra los modelos; composición; y la forma de cada petición a OpenAI, Cloudflare Workers AI y Ollama con un transporte HTTP simulado (incluidos errores, respuestas ilegibles y timeouts); la moderación con LLM fallando cerrada; el timeout propio del adaptador; el despliegue (la URL de Neon para asyncpg, el Blueprint de Render, la imagen sin rembg (arrancar con `RECORTE=umbral` no lo importa) y el S3 de Hugging Face sin sumas ni SSE y con borrado uno por uno); y el modo invitado (apagado por defecto, rechazado en producción, moderado, sin dejar el cuento en la base de datos ni en el almacén, aislado entre invitados y con límite por IP).
 - App: widgets del lienzo (con la pista del lienzo vacío), la identificación, el visor (texto, imagen y botón de escuchar), la biblioteca, los perfiles (estado vacío con «Crear el primer dibujante» y tarjetas con lápiz) y el acceso (logo, el botón de invitado solo con `MODO_INVITADO`, reenvío del correo de confirmación y regreso desde el enlace); el flujo con Riverpod; y los repositorios contra un adaptador HTTP falso con Hive real (caché, lectura sin conexión, sincronización, borrado y reintentos; y en modo invitado, perfiles y cuentos solo locales y renovación del token).
 
 ## Estado y pendientes
