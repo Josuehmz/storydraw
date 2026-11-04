@@ -27,20 +27,30 @@ class CuentasRepositorioApi implements CuentasRepositorio {
   }
 
   @override
-  Future<void> registrar({
+  Future<bool> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
-  }) => _envolver(
-    () => _dio.post<dynamic>(
+  }) => _envolver(() async {
+    final r = await _dio.post<Map<String, dynamic>>(
       '/v1/auth/registro',
       data: {
         'email': email,
         'contrasena': contrasena,
         'acepta_consentimiento': aceptaConsentimiento,
       },
-    ),
-  );
+    );
+    return r.data?['correo_enviado'] as bool? ?? true;
+  });
+
+  @override
+  Future<void> reenviarVerificacion({required String email, required String contrasena}) =>
+      _envolver(
+        () => _dio.post<dynamic>(
+          '/v1/auth/reenviar-verificacion',
+          data: {'email': email, 'contrasena': contrasena},
+        ),
+      );
 
   @override
   Future<void> iniciarSesion({required String email, required String contrasena}) =>
@@ -53,7 +63,10 @@ class CuentasRepositorioApi implements CuentasRepositorio {
       });
 
   @override
-  Future<void> cerrarSesion() => _sesion.cerrar();
+  Future<void> cerrarSesion() async {
+    await _cache?.limpiar();
+    await _sesion.cerrar();
+  }
 
   @override
   Future<List<Perfil>> perfiles() => _envolver(() async {
@@ -137,11 +150,21 @@ class CuentosRepositorioApi implements CuentosRepositorio {
     return Uint8List.fromList(r.data!);
   }
 
-  /// Descarga las imágenes de las páginas y guarda el cuento en la caché.
+  /// Descarga las imágenes y la narración de las páginas y guarda el cuento en la caché.
+  /// Si la narración de una página no se puede bajar, el cuento se entrega igual: solo esa
+  /// página queda sin botón de escuchar.
   Future<Cuento> _descargar(Cuento cuento) async {
     final paginas = <Pagina>[];
     for (final p in cuento.paginas) {
-      paginas.add(p.conMedios(imagen: await _bytes(p.imagenUrl)));
+      Uint8List? audio;
+      if (p.audioUrl != null) {
+        try {
+          audio = await _bytes(p.audioUrl!);
+        } on DioException {
+          audio = null;
+        }
+      }
+      paginas.add(p.conMedios(imagen: await _bytes(p.imagenUrl), audio: audio));
     }
     final completo = cuento.conPaginas(paginas);
     await _cache.guardar(completo);

@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
 import '../core/http.dart';
+import '../core/correo.dart';
 import '../data/cache_cuentos.dart';
+import '../data/enlaces_app.dart';
 import '../data/repositorios_api.dart';
 import '../data/repositorios_invitado.dart';
+import '../data/reproductor_just_audio.dart';
 import '../data/sesion_local.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -40,13 +43,22 @@ final cuentasRepositorioProvider = Provider<CuentasRepositorio>((ref) {
 /// de `sesionProvider`, y Riverpod 3 lanza `CircularDependencyError` si el notifier
 /// lee un provider que depende de él (así fallaban «Cerrar sesión» y «Salir del modo
 /// invitado»).
-final cuentasApiProvider = Provider<CuentasRepositorioApi>(
+///
+/// Va tipado con el contrato para que las pruebas lo sustituyan por un falso.
+final cuentasApiProvider = Provider<CuentasRepositorio>(
   (ref) => CuentasRepositorioApi(
     ref.watch(dioProvider),
     ref.watch(sesionLocalProvider),
     ref.watch(cacheProvider),
   ),
 );
+
+/// Un solo reproductor para toda la app: así dos páginas nunca suenan a la vez.
+final reproductorProvider = Provider<Reproductor>((ref) {
+  final r = ReproductorJustAudio();
+  ref.onDispose(r.liberar);
+  return r;
+});
 
 final cuentosRepositorioProvider = Provider<CuentosRepositorio>((ref) {
   if (ref.watch(sesionProvider.select((s) => s.invitado))) {
@@ -104,6 +116,8 @@ class SesionNotifier extends Notifier<EstadoSesion> {
 
   Future<void> iniciar(String email, String contrasena) async {
     await ref.read(cuentasApiProvider).iniciarSesion(email: email, contrasena: contrasena);
+    // Un perfil guardado de antes puede ser de otra cuenta: cada inicio de sesión pide elegir.
+    await _local.olvidarPerfil();
     state = const EstadoSesion(autenticado: true);
   }
 
@@ -156,4 +170,29 @@ class BibliotecaNotifier extends AsyncNotifier<List<Cuento>> {
 
 final bibliotecaProvider = AsyncNotifierProvider<BibliotecaNotifier, List<Cuento>>(
   BibliotecaNotifier.new,
+);
+
+// ------------------------------------------------------- correo confirmado (enlace)
+
+final enlacesAppProvider = Provider<EnlacesApp>((ref) => EnlacesAppReal());
+
+/// El correo recién confirmado, llegado por el enlace que reabre la app. La pantalla de acceso
+/// lo consume (prellena el correo y avisa) y lo limpia. Vacío = confirmado, sin correo en el enlace.
+class ConfirmacionCorreoNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  /// Devuelve true si el enlace era el de «correo confirmado».
+  bool alAbrirEnlace(Uri enlace) {
+    final correo = correoConfirmadoDe(enlace);
+    if (correo == null) return false;
+    state = correo;
+    return true;
+  }
+
+  void consumir() => state = null;
+}
+
+final confirmacionCorreoProvider = NotifierProvider<ConfirmacionCorreoNotifier, String?>(
+  ConfirmacionCorreoNotifier.new,
 );

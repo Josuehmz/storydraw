@@ -65,29 +65,56 @@ EstadoCuento estadoDesde(String valor) => switch (valor) {
 abstract final class Avisos {
   static const sinEscenarios = 'sin_escenarios';
   static const sinIdentificacion = 'sin_identificacion';
+  static const sinNarracion = 'sin_narracion';
 }
 
 @immutable
 class Pagina {
-  const Pagina({required this.numero, required this.texto, required this.imagenUrl, this.imagen});
+  const Pagina({
+    required this.numero,
+    required this.texto,
+    required this.imagenUrl,
+    this.audioUrl,
+    this.imagen,
+    this.audio,
+  });
 
   final int numero;
   final String texto;
   final String imagenUrl;
 
+  /// Narración de esta página en el servidor. Null = esta página no tiene voz.
+  final String? audioUrl;
+
   /// Bytes ya descargados (caché local para releer sin conexión).
   final Uint8List? imagen;
+  final Uint8List? audio;
 
-  Pagina conMedios({Uint8List? imagen}) =>
-      Pagina(numero: numero, texto: texto, imagenUrl: imagenUrl, imagen: imagen ?? this.imagen);
+  /// Solo se ofrece el botón de escuchar si el MP3 ya está en el teléfono.
+  bool get tieneAudio => audio != null;
+
+  Pagina conMedios({Uint8List? imagen, Uint8List? audio}) => Pagina(
+    numero: numero,
+    texto: texto,
+    imagenUrl: imagenUrl,
+    audioUrl: audioUrl,
+    imagen: imagen ?? this.imagen,
+    audio: audio ?? this.audio,
+  );
 
   factory Pagina.desdeJson(Map<String, dynamic> j) => Pagina(
     numero: j['numero'] as int,
     texto: j['texto'] as String,
     imagenUrl: j['imagen_url'] as String,
+    audioUrl: j['audio_url'] as String?,
   );
 
-  Map<String, dynamic> aJson() => {'numero': numero, 'texto': texto, 'imagen_url': imagenUrl};
+  Map<String, dynamic> aJson() => {
+    'numero': numero,
+    'texto': texto,
+    'imagen_url': imagenUrl,
+    'audio_url': audioUrl,
+  };
 }
 
 @immutable

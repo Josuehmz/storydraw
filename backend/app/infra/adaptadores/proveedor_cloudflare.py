@@ -24,11 +24,14 @@ from app.dominio.puertos import (
     IImagen,
     ITexto,
     IVision,
+    IVoz,
+    ResultadoAudio,
     ResultadoImagen,
     ResultadoVision,
     SolicitudCuento,
     Uso,
 )
+from app.infra.adaptadores.audio import es_wav, wav_a_mp3
 from app.infra.adaptadores.comun import (
     ESQUEMA_CUENTO,
     ESQUEMA_VISION,
@@ -41,6 +44,9 @@ from app.infra.adaptadores.comun import (
     mensaje_solicitud,
     prompt_fondo,
 )
+
+# Solo si el audio no viene en WAV y no se puede medir: unos 15 caracteres por segundo de habla.
+CARACTERES_POR_SEGUNDO = 15
 
 URL_BASE = "https://api.cloudflare.com/client/v4/accounts/{cuenta}/ai/run/{modelo}"
 
@@ -258,3 +264,38 @@ def _jpeg_a_png(crudo: bytes) -> tuple[bytes, tuple[int, int]]:
     except OSError as exc:
         raise ErrorProveedor("la imagen de Cloudflare no se puede abrir") from exc
     return salida.getvalue(), tamano
+
+
+class VozCloudflare(IVoz):
+    """MeloTTS: `{"prompt", "lang"}` -> `{"audio": base64}`; hoy llega como WAV y se pasa a MP3.
+
+    Las neuronas se cobran por minuto de audio (18,63 por minuto con la tarifa publicada),
+    así que se calculan con la duración real del WAV y no con el largo del texto.
+    """
+
+    proveedor = "cloudflare"
+
+    def __init__(
+        self, cliente: ClienteCloudflare, modelo: str, idioma: str, neuronas_minuto: float
+    ):
+        self._cliente = cliente
+        self._modelo = modelo
+        self._idioma = idioma
+        self._neuronas_minuto = neuronas_minuto
+        self.timeout_s = cliente.timeout_s
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        resultado = await self._cliente.run_json(
+            self._modelo, {"prompt": texto, "lang": self._idioma}
+        )
+        crudo = _b64(resultado.get("audio"), "el audio")
+        if es_wav(crudo):
+            mp3, segundos = wav_a_mp3(crudo)
+        else:
+            # Si algún día Cloudflare devuelve ya MP3, se entrega tal cual.
+            mp3, segundos = crudo, len(texto) / CARACTERES_POR_SEGUNDO
+        if not mp3:
+            raise ErrorProveedor("Cloudflare devolvió un audio vacío")
+        neuronas = segundos / 60 * self._neuronas_minuto
+        uso = Uso(caracteres=len(texto), neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
+        return ResultadoAudio(mp3, uso)

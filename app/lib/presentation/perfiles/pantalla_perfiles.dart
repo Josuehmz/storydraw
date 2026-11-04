@@ -6,9 +6,12 @@ import '../../core/tema.dart';
 import '../../domain/entidades.dart';
 import '../widgets/comunes.dart';
 
-final perfilesProvider = FutureProvider<List<Perfil>>(
-  (ref) => ref.watch(cuentasRepositorioProvider).perfiles(),
-);
+/// Los perfiles de la cuenta con la sesión abierta. Depende de la sesión: al cerrar sesión y
+/// entrar con otra cuenta se vuelven a pedir, y nunca se ven los de la cuenta anterior.
+final perfilesProvider = FutureProvider<List<Perfil>>((ref) {
+  ref.watch(sesionProvider.select((s) => s.autenticado));
+  return ref.watch(cuentasRepositorioProvider).perfiles();
+});
 
 /// Elegir o crear el perfil del niño (6 a 12 años). Lo maneja el adulto.
 class PantallaPerfiles extends ConsumerWidget {
@@ -102,9 +105,24 @@ class PantallaPerfiles extends ConsumerWidget {
           ? _SinPerfiles(alCrear: () => _crear(context, ref))
           : Column(
               children: [
+                // Pista solo para el adulto: borrar es un gesto a propósito difícil. Va arriba,
+                // lejos del botón flotante.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: Text(
+                    'Mantén pulsado un perfil para borrarlo',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colores.texto.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
                 Expanded(
                   child: GridView.count(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                    // El margen de abajo deja libre el sitio del botón «Nuevo dibujante».
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                     crossAxisCount: 2,
                     mainAxisSpacing: 16,
                     crossAxisSpacing: 16,
@@ -118,19 +136,6 @@ class PantallaPerfiles extends ConsumerWidget {
                           alMantener: () => _borrar(context, ref, p),
                         ),
                     ],
-                  ),
-                ),
-                // Pista solo para el adulto (borrar es un gesto a propósito difícil); abajo
-                // deja sitio para el botón flotante.
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 92),
-                  child: Text(
-                    'Mantén pulsado un perfil para borrarlo',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colores.texto.withValues(alpha: 0.6),
-                    ),
                   ),
                 ),
               ],
