@@ -15,6 +15,8 @@ if [[ "$API_URL" != https://* ]]; then
 fi
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# git y apksigner son programas nativos en Windows: necesitan rutas C:/...
+RAIZ_NATIVA="$(cygpath -m "$RAIZ" 2>/dev/null || echo "$RAIZ")"
 APP="$RAIZ/app"
 PROPIEDADES="$APP/android/key.properties"
 if [[ ! -f "$PROPIEDADES" ]]; then
@@ -25,7 +27,7 @@ fi
 for clave in storeFile storePassword keyAlias keyPassword; do
   grep -q "^$clave=" "$PROPIEDADES" || { echo "key.properties no tiene $clave" >&2; exit 1; }
 done
-if git -C "$RAIZ" ls-files --error-unmatch "app/android/key.properties" >/dev/null 2>&1; then
+if git -C "$RAIZ_NATIVA" ls-files --error-unmatch "app/android/key.properties" >/dev/null 2>&1; then
   echo "key.properties está en git: sácalo (git rm --cached) antes de seguir." >&2
   exit 1
 fi
@@ -51,7 +53,7 @@ if grep -q "CN=Android Debug" <<<"$FIRMA"; then
 fi
 echo "$FIRMA" | grep -E "Signer #1 certificate (DN|SHA-256)" || true
 
-COMMIT="$(git -C "$RAIZ" rev-parse --short HEAD)"
+COMMIT="$(git -C "$RAIZ_NATIVA" rev-parse --short HEAD)"
 DESTINO="${DESTINO_APK:-D:/Android/apk}"
 mkdir -p "$DESTINO"
 cp "$APK" "$DESTINO/storydraw-release-$COMMIT.apk"

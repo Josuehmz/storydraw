@@ -71,7 +71,7 @@ if [[ "$CODIGO" != "200" ]]; then
   exit 1
 fi
 
-COMMIT="$(git -C "$RAIZ" rev-parse --short HEAD 2>/dev/null || echo sin-git)"
+COMMIT="$(git -C "$(cygpath -m "$RAIZ" 2>/dev/null || echo "$RAIZ")" rev-parse --short HEAD 2>/dev/null || echo sin-git)"
 # En Git Bash de Windows, hf es un programa nativo: necesita la ruta C:/... de la carpeta.
 ETAPA_NATIVA="$(cygpath -m "$ETAPA" 2>/dev/null || echo "$ETAPA")"
 hf upload "$SPACE_ID" "$ETAPA_NATIVA" . \
