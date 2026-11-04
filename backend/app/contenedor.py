@@ -30,6 +30,7 @@ from app.infra.adaptadores.falsos import (
     VozFalsa,
     VozNoDisponible,
 )
+from app.infra.adaptadores.moderacion_llama_guard import ModeracionLlamaGuard
 from app.infra.adaptadores.moderacion_llm import ModeracionLLMSoloDesarrollo
 from app.infra.adaptadores.proveedor_cloudflare import (
     ClienteCloudflare,
@@ -156,6 +157,12 @@ def construir(settings: Settings) -> Contenedor:
                     settings.openai_modelo_texto,
                     settings.openai_modelo_moderacion,
                 )
+            )
+        case "llamaguard":
+            moderador = ModeracionLlamaGuard(
+                cloudflare,
+                settings.cloudflare_modelo_guardia,
+                ModeracionLLMSoloDesarrollo(cloudflare, settings.cloudflare_modelo_moderacion),
             )
         case "cloudflare":
             moderador = ModeracionLLMSoloDesarrollo(
