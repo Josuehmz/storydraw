@@ -6,11 +6,16 @@ import 'entidades.dart';
 /// la presentación nunca habla con Dio ni con Hive directamente.
 
 abstract interface class CuentasRepositorio {
-  Future<void> registrar({
+  /// Crea la cuenta. Devuelve `false` si la cuenta quedó creada pero el correo de
+  /// confirmación no pudo salir (el adulto puede pedir que se reenvíe).
+  Future<bool> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
   });
+
+  /// Vuelve a mandar el correo de confirmación (pide la contraseña para no ser un buzón abierto).
+  Future<void> reenviarVerificacion({required String email, required String contrasena});
 
   Future<void> iniciarSesion({required String email, required String contrasena});
 
@@ -36,7 +41,7 @@ abstract interface class CuentosRepositorio {
   });
 
   /// Consulta hasta que el cuento sale de `en_proceso` y, si está listo,
-  /// descarga las páginas a la caché local.
+  /// descarga las páginas (imagen y narración) a la caché local.
   Future<Cuento> esperar(String cuentoId);
 
   /// Cuentos del perfil: los de la caché siempre; los del servidor si hay red.
@@ -44,4 +49,16 @@ abstract interface class CuentosRepositorio {
 
   /// Borrado a petición (servidor y caché).
   Future<void> borrar(String cuentoId);
+}
+
+/// Reproductor de la narración (just_audio en la app, falso en las pruebas).
+abstract interface class Reproductor {
+  /// `true` mientras suena. Pasa a `false` al terminar o al detenerlo.
+  Stream<bool> get reproduciendo;
+
+  Future<void> reproducir(Uint8List mp3);
+
+  Future<void> detener();
+
+  Future<void> liberar();
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 import jwt
 from sqlalchemy import func, select
@@ -96,7 +97,7 @@ def test_credenciales_y_tokens_invalidos(entorno):
     falso = {"Authorization": "Bearer no-es-un-jwt"}
     assert entorno.cliente.get("/v1/perfiles", headers=falso).status_code == 401
     # Un token de verificación no sirve como token de acceso.
-    tutor_token = entorno.c.correo.enviados[-1][2].split("token=")[1].strip()
+    tutor_token = re.search(r"token=([\w\-\.]+)", entorno.c.correo.enviados[-1][2]).group(1)
     cab = {"Authorization": f"Bearer {tutor_token}"}
     assert entorno.cliente.get("/v1/perfiles", headers=cab).status_code == 401
 

@@ -27,7 +27,12 @@ final png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
 );
 
-Map<String, dynamic> cuentoInvitado(String id, String estado) => {
+/// `audios`: la narración por página (null = esa página sin voz); vacío = la voz apagada.
+Map<String, dynamic> cuentoInvitado(
+  String id,
+  String estado, {
+  List<Uint8List?> audios = const [],
+}) => {
   'id': id,
   'estado': estado,
   'titulo': estado == 'listo' ? 'El dragón' : null,
@@ -37,7 +42,14 @@ Map<String, dynamic> cuentoInvitado(String id, String estado) => {
       ? <Object>[]
       : [
           for (var n = 1; n <= 3; n++)
-            {'numero': n, 'texto': 'Página $n', 'imagen_png_base64': base64Encode(png)},
+            {
+              'numero': n,
+              'texto': 'Página $n',
+              'imagen_png_base64': base64Encode(png),
+              'audio_mp3_base64': n <= audios.length && audios[n - 1] != null
+                  ? base64Encode(audios[n - 1]!)
+                  : null,
+            },
         ],
 };
 
@@ -139,6 +151,27 @@ void main() {
       'personaje': 'un pez',
       'nombre': 'Burbuja',
     });
+  });
+
+  test('la voz del invitado llega con el cuento y queda en Hive para escucharla sin red', () async {
+    await sesion.guardarTokenInvitado('jwt-invitado');
+    final perfil = await cuentas.crearPerfil(apodo: 'Luna', edad: 8);
+    await sesion.elegirPerfil(id: perfil.id, apodo: perfil.apodo, edad: perfil.edad);
+    final mp3 = Uint8List.fromList([0x49, 0x44, 0x33, 1, 2, 3]);
+    http.manejar = (o) => respuestaJson(cuentoInvitado('g4', 'listo', audios: [mp3, null, mp3]));
+
+    final cuento = await cuentos.esperar('g4');
+    expect(cuento.paginas.map((p) => p.tieneAudio), [true, false, true]);
+    expect(cuento.paginas.first.audio, mp3);
+
+    final guardado = (await cuentos.biblioteca(perfil.id)).single;
+    expect(guardado.paginas.map((p) => p.audio), [mp3, null, mp3]);
+  });
+
+  test('con la voz apagada el cuento del invitado llega sin audio', () async {
+    http.manejar = (o) => respuestaJson(cuentoInvitado('g5', 'listo'));
+    final cuento = await cuentos.esperar('g5');
+    expect(cuento.paginas.map((p) => p.tieneAudio), everyElement(isFalse));
   });
 
   test('un cuento rechazado no se guarda', () async {

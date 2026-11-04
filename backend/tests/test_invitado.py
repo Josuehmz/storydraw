@@ -96,6 +96,42 @@ def test_cuento_de_invitado_se_entrega_entero_y_no_queda_en_el_servidor(crear_en
     assert entorno.cliente.get(f"/v1/invitado/cuentos/{cuento_id}", headers=cab).status_code == 404
 
 
+def test_el_invitado_recibe_la_voz_de_cada_pagina_y_no_queda_en_el_almacen(crear_entorno):
+    entorno = crear_entorno(permitir_invitados=True)
+    cab = _entrar(entorno)
+    cuento_id = _crear(entorno, cab).json()["id"]
+
+    cuento = entorno.cliente.get(f"/v1/invitado/cuentos/{cuento_id}", headers=cab).json()
+    assert cuento["estado"] == "listo"
+    assert entorno.c.voz.llamadas == 3
+    for p in cuento["paginas"]:
+        audio = base64.b64decode(p["audio_mp3_base64"])
+        # La voz falsa narra el texto de ESA página
+        assert audio.startswith(b"ID3") and p["texto"].encode()[:64] in audio
+    assert entorno.c.almacen.objetos == {}
+
+
+def test_con_la_voz_apagada_el_invitado_recibe_el_cuento_sin_audio(crear_entorno):
+    entorno = crear_entorno(permitir_invitados=True, proveedor_voz="ninguno")
+    cab = _entrar(entorno)
+    cuento_id = _crear(entorno, cab).json()["id"]
+
+    cuento = entorno.cliente.get(f"/v1/invitado/cuentos/{cuento_id}", headers=cab).json()
+    assert cuento["estado"] == "listo" and "sin_narracion" not in cuento["avisos"]
+    assert [p["audio_mp3_base64"] for p in cuento["paginas"]] == [None, None, None]
+
+
+def test_si_la_voz_cae_el_invitado_recibe_el_cuento_escrito_con_aviso(crear_entorno):
+    entorno = crear_entorno(permitir_invitados=True)
+    entorno.c.voz.fallar = True
+    cab = _entrar(entorno)
+    cuento_id = _crear(entorno, cab).json()["id"]
+
+    cuento = entorno.cliente.get(f"/v1/invitado/cuentos/{cuento_id}", headers=cab).json()
+    assert cuento["estado"] == "listo" and "sin_narracion" in cuento["avisos"]
+    assert all(p["audio_mp3_base64"] is None for p in cuento["paginas"])
+
+
 def test_nombre_del_personaje_llega_al_cuento_del_invitado(crear_entorno):
     entorno = crear_entorno(permitir_invitados=True)
     cab = _entrar(entorno)

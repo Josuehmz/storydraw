@@ -21,6 +21,8 @@ class TrabajoInvitado:
     resultado: ResultadoCuento | None = None
     # Páginas compuestas, en memoria, por número de página
     imagenes: dict[int, bytes] = field(default_factory=dict)
+    # Narración (MP3) por número de página; solo las páginas que la tienen
+    audios: dict[int, bytes] = field(default_factory=dict)
     creado: float = field(default_factory=time.monotonic)
 
     @property
@@ -50,11 +52,14 @@ class TrabajosInvitado:
         trabajo = self._trabajos.get(trabajo_id)
         return trabajo if trabajo is not None and trabajo.invitado == invitado else None
 
-    def terminar(self, trabajo_id: uuid.UUID, resultado: ResultadoCuento, imagenes) -> None:
+    def terminar(
+        self, trabajo_id: uuid.UUID, resultado: ResultadoCuento, imagenes, audios=None
+    ) -> None:
         trabajo = self._trabajos.get(trabajo_id)
         if trabajo is not None:
             trabajo.resultado = resultado
             trabajo.imagenes = dict(imagenes)
+            trabajo.audios = dict(audios or {})
 
     def olvidar(self, trabajo_id: uuid.UUID) -> None:
         self._trabajos.pop(trabajo_id, None)
