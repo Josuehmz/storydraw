@@ -42,7 +42,9 @@ APK="$APP/build/app/outputs/flutter-apk/app-release.apk"
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-D:/Android/sdk}}"
 APKSIGNER="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)apksigner"
 [[ -f "${APKSIGNER}.bat" ]] && APKSIGNER="${APKSIGNER}.bat"
-FIRMA="$("$APKSIGNER" verify --print-certs "$APK" | tr -d '\r')"
+# apksigner es nativo de Windows: necesita la ruta C:/... del APK
+APK_NATIVO="$(cygpath -m "$APK" 2>/dev/null || echo "$APK")"
+FIRMA="$("$APKSIGNER" verify --print-certs "$APK_NATIVO" | tr -d '\r')"
 if grep -q "CN=Android Debug" <<<"$FIRMA"; then
   echo "El APK quedó firmado con la clave de depuración: revisa key.properties." >&2
   exit 1
