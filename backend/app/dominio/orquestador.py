@@ -1,17 +1,22 @@
-"""Orquestador del pipeline: asyncio, cuatro pasos, reintento por paso y degradación.
+"""Orquestador del pipeline: asyncio, cinco pasos, reintento por paso y degradación.
 
 Pasos: 1 identificar (visión, opcional) · 2 escribir (texto) · 3 moderar (obligatorio) ·
-4 escenarios (imagen). Después, la composición monta las páginas y las sube al almacén.
-El cuento sale sin narración: se lee en pantalla.
+4 escenarios (imagen) · 5 narrar (voz). Los pasos 4 y 5 corren en paralelo. Después, la
+composición monta las páginas y las sube al almacén.
 
 - Cada paso se reintenta por separado; un fallo no rehace el cuento entero.
 - La visión da el personaje (si el niño no lo dijo) y los rasgos del dibujo (colores,
   elementos, emoción), que viajan al paso del cuento para que no invente otros.
 - Sin visión, se usa lo que el niño escribió (o un personaje genérico) y no hay rasgos.
 - Un cuento con menos de 3 páginas no se entrega: cuenta como intento fallido del paso.
-- Sin imagen, se usa un fondo del banco y el cuento sale con aviso.
+- Sin imagen, se usa un fondo del banco y el cuento sale con aviso. Si la voz falla, el cuento
+  se entrega escrito, con aviso (apagada no avisa). La voz solo lee texto que ya pasó la moderación.
 - Una capacidad apagada (`PROVEEDOR_*=ninguno`) no se llama ni se reintenta.
 - Sin cuento o sin moderación aprobada, no hay nada que mostrar: el niño no ve nada.
+- Tiempos: cada llamada tiene un tope (cuerpo de la respuesta incluido); si se agota, se
+  reintenta una sola vez. El cuento entero tiene otro tope y, si se pasa, falla limpio.
+  Cada etapa deja su duración en el log (`cuento=<id> etapa=<nombre> ms=<n>`), sin datos
+  del niño.
 """
 
 from __future__ import annotations
@@ -19,7 +24,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Literal, TypeVar
 
@@ -34,6 +40,7 @@ from app.dominio.puertos import (
     IImagen,
     ITexto,
     IVision,
+    IVoz,
     SolicitudCuento,
     Uso,
 )
@@ -43,7 +50,9 @@ T = TypeVar("T")
 
 PERSONAJE_GENERICO = "un amigo mágico"
 AVISO_SIN_ESCENARIOS = "sin_escenarios"
+AVISO_SIN_NARRACION = "sin_narracion"
 AVISO_SIN_IDENTIFICACION = "sin_identificacion"
+AVISO_TIEMPO_AGOTADO = "tiempo_agotado"
 
 PAGINAS = 3
 
@@ -93,6 +102,7 @@ class PaginaFinal:
     numero: int
     texto: str
     imagen_clave: str
+    audio_clave: str | None = None
 
 
 @dataclass
@@ -123,6 +133,21 @@ def clave_imagen(cuento_id: str, numero: int) -> str:
     return f"cuentos/{cuento_id}/paginas/{numero}.png"
 
 
+def clave_audio(cuento_id: str, numero: int) -> str:
+    return f"cuentos/{cuento_id}/audio/{numero}.mp3"
+
+
+@contextmanager
+def medir(cuento_id: str, etapa: str) -> Iterator[None]:
+    """Registra en INFO cuánto tardó una etapa. Solo id y milisegundos: nada del niño."""
+    inicio = time.perf_counter()
+    try:
+        yield
+    finally:
+        ms = int((time.perf_counter() - inicio) * 1000)
+        log.info("cuento=%s etapa=%s ms=%d", cuento_id, etapa, ms)
+
+
 class Orquestador:
     def __init__(
         self,
@@ -130,6 +155,7 @@ class Orquestador:
         vision: IVision,
         texto: ITexto,
         imagen: IImagen,
+        voz: IVoz,
         moderacion: Moderacion,
         compositor: Compositor,
         almacen: IAlmacen,
@@ -138,10 +164,12 @@ class Orquestador:
         espera_base_s: float = 0.5,
         max_regeneraciones: int = 2,
         timeout_s: float = 60.0,
+        tiempo_maximo_s: float | None = None,
     ):
         self.vision = vision
         self.texto = texto
         self.imagen = imagen
+        self.voz = voz
         self.moderacion = moderacion
         self.compositor = compositor
         self.almacen = almacen
@@ -150,6 +178,8 @@ class Orquestador:
         self.espera_base_s = espera_base_s
         self.max_regeneraciones = max_regeneraciones
         self.timeout_s = timeout_s
+        # Tope del cuento entero (None = sin tope, p. ej. Ollama por CPU)
+        self.tiempo_maximo_s = tiempo_maximo_s
 
     # ---------------------------------------------------------------- utilidades
 
@@ -167,6 +197,7 @@ class Orquestador:
         """
         limite = timeout_s or self.timeout_s
         ultimo: BaseException | None = None
+        tiempos_agotados = 0
         inicio = time.perf_counter()
         try:
             for intento in range(self.reintentos + 1):
@@ -182,6 +213,12 @@ class Orquestador:
                         intento + 1,
                         type(exc).__name__,
                     )
+                    # Un tiempo agotado ya costó el tope entero: se reintenta una sola vez
+                    # y, si vuelve a agotarse, el paso falla limpio (o se degrada).
+                    if isinstance(exc, TimeoutError):
+                        tiempos_agotados += 1
+                        if tiempos_agotados >= 2:
+                            break
                     if intento < self.reintentos and self.espera_base_s:
                         await asyncio.sleep(self.espera_base_s * (2**intento))
                     continue
@@ -234,12 +271,26 @@ class Orquestador:
     # ---------------------------------------------------------------- pipeline
 
     async def crear_cuento(
-        self, cuento_id: str, dibujo_png: bytes, personaje: str | None, edad: int
+        self,
+        cuento_id: str,
+        dibujo_png: bytes,
+        personaje: str | None,
+        edad: int,
+        nombre: str | None = None,
     ) -> ResultadoCuento:
         inicio = time.perf_counter()
         resultado = ResultadoCuento(estado="fallido")
         try:
-            await self._pipeline(resultado, cuento_id, dibujo_png, personaje, edad)
+            await asyncio.wait_for(
+                self._pipeline(resultado, cuento_id, dibujo_png, personaje, edad, nombre),
+                timeout=self.tiempo_maximo_s,
+            )
+        except TimeoutError:
+            # Tope del cuento entero: falla limpio, sin páginas a medias.
+            log.warning("cuento=%s tiempo_agotado tope_s=%s", cuento_id, self.tiempo_maximo_s)
+            resultado.estado = "fallido"
+            resultado.paginas.clear()
+            resultado.avisos.append(AVISO_TIEMPO_AGOTADO)
         finally:
             resultado.latencia_ms = int((time.perf_counter() - inicio) * 1000)
         return resultado
@@ -251,14 +302,20 @@ class Orquestador:
         dibujo_png: bytes,
         personaje: str | None,
         edad: int,
+        nombre: str | None = None,
     ) -> None:
         # Recorte en un hilo: es CPU y no debe bloquear el bucle de eventos.
-        recorte_tarea = asyncio.create_task(asyncio.to_thread(self.compositor.recortar, dibujo_png))
+        def recortar_medido() -> bytes:
+            with medir(cuento_id, "recorte"):
+                return self.compositor.recortar(dibujo_png)
+
+        recorte_tarea = asyncio.create_task(asyncio.to_thread(recortar_medido))
 
         # Paso 1 · identificar. Aunque el niño ya dijo qué dibujó, la visión lee los rasgos
         # del dibujo (colores, elementos, emoción) para que el cuento no invente otros.
         personaje = (personaje or "").strip()[:120]
-        ident = await self.identificar(dibujo_png)
+        with medir(cuento_id, "identificar"):
+            ident = await self.identificar(dibujo_png)
         resultado.pasos.append(ident.metrica)
         atributos = ident.atributos
         if not personaje:
@@ -268,17 +325,20 @@ class Orquestador:
                 personaje = PERSONAJE_GENERICO
                 resultado.avisos.append(AVISO_SIN_IDENTIFICACION)
         resultado.personaje = personaje
-        solicitud = SolicitudCuento(personaje, edad, PAGINAS, atributos)
+        nombre = (nombre or "").strip()[:40]
+        solicitud = SolicitudCuento(personaje, edad, PAGINAS, atributos, nombre)
 
         # Pasos 2 y 3 · escribir y moderar, con regeneración si se rechaza
         m_escribir = MetricaPaso("escribir", self.texto.proveedor)
         m_moderar = MetricaPaso("moderar", self.moderacion.proveedor)
         resultado.pasos += [m_escribir, m_moderar]
 
-        entrada = personaje
+        entrada = f"{personaje} llamado {nombre}" if nombre else personaje
         if not atributos.vacio:
             entrada += f"\n({atributos.como_texto()})"
-        if not await self._moderar(m_moderar, resultado, "entrada", entrada):
+        with medir(cuento_id, "moderar_entrada"):
+            entrada_ok = await self._moderar(m_moderar, resultado, "entrada", entrada)
+        if not entrada_ok:
             m_escribir.estado = "omitido"
             resultado.estado = "rechazado"
             recorte_tarea.cancel()
@@ -287,13 +347,14 @@ class Orquestador:
         cuento: CuentoTexto | None = None
         for _ in range(self.max_regeneraciones + 1):
             try:
-                candidato = await self._con_reintentos(
-                    m_escribir,
-                    "texto",
-                    lambda: self._escribir_completo(solicitud),
-                    lambda r: r.uso,
-                    self.texto.timeout_s,
-                )
+                with medir(cuento_id, "escribir"):
+                    candidato = await self._con_reintentos(
+                        m_escribir,
+                        "texto",
+                        lambda: self._escribir_completo(solicitud),
+                        lambda r: r.uso,
+                        self.texto.timeout_s,
+                    )
             except FalloPaso:
                 m_escribir.estado = "fallido"
                 resultado.estado = "fallido"
@@ -301,7 +362,9 @@ class Orquestador:
                 return
             paginas_candidato = candidato.paginas[:PAGINAS]
             completo = candidato.titulo + "\n" + "\n".join(p.texto for p in paginas_candidato)
-            if await self._moderar(m_moderar, resultado, "cuento", completo):
+            with medir(cuento_id, "moderar_cuento"):
+                aprobado = await self._moderar(m_moderar, resultado, "cuento", completo)
+            if aprobado:
                 cuento = candidato
                 break
         if cuento is None:
@@ -312,21 +375,79 @@ class Orquestador:
         paginas = cuento.paginas[:PAGINAS]
         resultado.titulo = cuento.titulo.strip()[:200]
 
-        # Paso 4 · escenarios
+        # Pasos 4 y 5 · escenarios y narración en paralelo; ninguno bloquea al otro.
+        # La voz lee el texto ya moderado: nunca se narra (ni se paga) algo no aprobado.
         m_escenarios = MetricaPaso("escenarios", self.imagen.proveedor)
-        resultado.pasos.append(m_escenarios)
-        fondos = await self._escenarios(m_escenarios, [p.escena for p in paginas])
+        m_narrar = MetricaPaso("narrar", self.voz.proveedor)
+        resultado.pasos += [m_escenarios, m_narrar]
+
+        async def escenarios_medidos() -> list[bytes]:
+            with medir(cuento_id, "escenarios"):
+                return await self._escenarios(m_escenarios, [p.escena for p in paginas], cuento_id)
+
+        async def narrar_medido() -> list[bytes | None]:
+            with medir(cuento_id, "narrar"):
+                return await self.narrar([p.texto for p in paginas], m_narrar)
+
+        fondos, audios = await asyncio.gather(escenarios_medidos(), narrar_medido())
         if m_escenarios.estado in ("degradado", "omitido"):
             resultado.avisos.append(AVISO_SIN_ESCENARIOS)
+        # Con la voz apagada (`ninguno`) no hay aviso: es el estado normal. Solo si falló.
+        if m_narrar.estado == "degradado":
+            resultado.avisos.append(AVISO_SIN_NARRACION)
 
-        # Composición y subida al almacén
-        recorte = await recorte_tarea
-        for i, pagina in enumerate(paginas, start=1):
-            png = await asyncio.to_thread(self.compositor.componer, fondos[i - 1], recorte, i)
+        # Composición y subida al almacén. Las páginas se componen a la vez, cada una en
+        # su hilo: Pillow suelta el GIL en lo pesado y el bucle de eventos queda libre.
+        with medir(cuento_id, "espera_recorte"):
+            recorte = await recorte_tarea
+
+        def componer_medido(i: int) -> bytes:
+            with medir(cuento_id, f"componer_{i}"):
+                return self.compositor.componer(fondos[i - 1], recorte, i)
+
+        with medir(cuento_id, "componer"):
+            pngs = await asyncio.gather(
+                *(asyncio.to_thread(componer_medido, i) for i in range(1, len(paginas) + 1))
+            )
+        for i, (pagina, png) in enumerate(zip(paginas, pngs, strict=True), start=1):
             clave = clave_imagen(cuento_id, i)
-            await self.almacen.guardar(clave, png, "image/png")
-            resultado.paginas.append(PaginaFinal(i, pagina.texto.strip(), clave))
+            with medir(cuento_id, f"guardar_{i}"):
+                await self.almacen.guardar(clave, png, "image/png")
+                audio_clave = None
+                if audios[i - 1] is not None:
+                    audio_clave = clave_audio(cuento_id, i)
+                    await self.almacen.guardar(audio_clave, audios[i - 1], "audio/mpeg")
+            resultado.paginas.append(PaginaFinal(i, pagina.texto.strip(), clave, audio_clave))
         resultado.estado = "listo"
+
+    async def narrar(
+        self, textos: list[str], metrica: MetricaPaso | None = None
+    ) -> list[bytes | None]:
+        """Paso 5: un audio por página. Si una falla, esa página queda sin audio."""
+        metrica = metrica or MetricaPaso("narrar", self.voz.proveedor)
+        if not self.voz.disponible:
+            # Capacidad apagada: cuento escrito, sin llamar ni reintentar.
+            metrica.estado = "omitido"
+            return [None] * len(textos)
+        inicio = time.perf_counter()
+
+        async def uno(texto: str) -> bytes | None:
+            try:
+                res = await self._con_reintentos(
+                    metrica,
+                    "voz",
+                    lambda: self.voz.narrar(texto),
+                    lambda r: r.uso,
+                    self.voz.timeout_s,
+                )
+                return res.mp3
+            except FalloPaso:
+                metrica.estado = "degradado"
+                return None
+
+        audios = list(await asyncio.gather(*(uno(t) for t in textos)))
+        metrica.latencia_ms = int((time.perf_counter() - inicio) * 1000)  # tiempo de pared
+        return audios
 
     async def _escribir_completo(self, solicitud: SolicitudCuento) -> CuentoTexto:
         """Un cuento con menos páginas de las pedidas cuenta como intento fallido."""
@@ -363,7 +484,9 @@ class Orquestador:
         metrica.estado = "ok"
         return True
 
-    async def _escenarios(self, metrica: MetricaPaso, escenas: list[str]) -> list[bytes]:
+    async def _escenarios(
+        self, metrica: MetricaPaso, escenas: list[str], cuento_id: str = "-"
+    ) -> list[bytes]:
         if not self.imagen.disponible:
             # Capacidad apagada: fondo del banco sin llamar ni reintentar.
             metrica.estado = "omitido"
@@ -372,13 +495,14 @@ class Orquestador:
 
         async def uno(i: int, escena: str) -> bytes:
             try:
-                res = await self._con_reintentos(
-                    metrica,
-                    "imagen",
-                    lambda: self.imagen.generar_fondo(escena),
-                    lambda r: r.uso,
-                    self.imagen.timeout_s,
-                )
+                with medir(cuento_id, f"fondo_{i + 1}"):
+                    res = await self._con_reintentos(
+                        metrica,
+                        "imagen",
+                        lambda: self.imagen.generar_fondo(escena),
+                        lambda r: r.uso,
+                        self.imagen.timeout_s,
+                    )
                 return res.png
             except FalloPaso:
                 metrica.estado = "degradado"

@@ -6,7 +6,7 @@ su adaptador y se agrega una rama aquí; el pipeline no se toca.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from openai import AsyncOpenAI
@@ -15,24 +15,29 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.dominio.composicion import Compositor, RecortadorRembg, RecortadorUmbral
 from app.dominio.costos import Tarifario
+from app.dominio.invitados import TrabajosInvitado
 from app.dominio.moderacion import Moderacion
 from app.dominio.orquestador import Orquestador
-from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision
+from app.dominio.puertos import IAlmacen, ICorreo, IImagen, IModerador, ITexto, IVision, IVoz
 from app.infra.adaptadores.almacen import AlmacenMemoria, AlmacenS3
-from app.infra.adaptadores.correo_smtp import CorreoSMTP
+from app.infra.adaptadores.correo_smtp import CorreoApagado, CorreoSMTP
 from app.infra.adaptadores.falsos import (
     CorreoFalso,
     ImagenFalsa,
     ImagenNoDisponible,
     TextoFalso,
     VisionFalsa,
+    VozFalsa,
+    VozNoDisponible,
 )
+from app.infra.adaptadores.moderacion_llama_guard import ModeracionLlamaGuard
 from app.infra.adaptadores.moderacion_llm import ModeracionLLMSoloDesarrollo
 from app.infra.adaptadores.proveedor_cloudflare import (
     ClienteCloudflare,
     ImagenCloudflare,
     TextoCloudflare,
     VisionCloudflare,
+    VozCloudflare,
 )
 from app.infra.adaptadores.proveedor_ollama import ClienteOllama, TextoOllama, VisionOllama
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
@@ -49,12 +54,14 @@ class Contenedor:
     texto: ITexto
     moderador: IModerador
     imagen: IImagen
+    voz: IVoz
     correo: ICorreo
     almacen: IAlmacen
     orquestador: Orquestador
     hasher: Hasher
     tokens: Tokens
     http: httpx.AsyncClient
+    invitados: TrabajosInvitado = field(default_factory=TrabajosInvitado)
 
     async def cerrar(self) -> None:
         await self.http.aclose()
@@ -63,6 +70,21 @@ class Contenedor:
 
 def _secreto(valor) -> str:
     return valor.get_secret_value() if valor is not None else ""
+
+
+TIEMPO_MAXIMO_CUENTO_S = 180.0
+
+
+def _tiempo_maximo_cuento(settings: Settings) -> float | None:
+    """Tope del cuento entero. Con Ollama por CPU no hay tope automático."""
+    if settings.tiempo_maximo_cuento_s is not None:
+        return settings.tiempo_maximo_cuento_s
+    proveedores = (
+        settings.proveedor_vision,
+        settings.proveedor_texto,
+        settings.proveedor_moderacion,
+    )
+    return None if "ollama" in proveedores else TIEMPO_MAXIMO_CUENTO_S
 
 
 def construir(settings: Settings) -> Contenedor:
@@ -136,6 +158,12 @@ def construir(settings: Settings) -> Contenedor:
                     settings.openai_modelo_moderacion,
                 )
             )
+        case "llamaguard":
+            moderador = ModeracionLlamaGuard(
+                cloudflare,
+                settings.cloudflare_modelo_guardia,
+                ModeracionLLMSoloDesarrollo(cloudflare, settings.cloudflare_modelo_moderacion),
+            )
         case "cloudflare":
             moderador = ModeracionLLMSoloDesarrollo(
                 cloudflare, settings.cloudflare_modelo_moderacion
@@ -168,18 +196,35 @@ def construir(settings: Settings) -> Contenedor:
         case _:
             imagen = ImagenFalsa()
 
-    correo: ICorreo = (
-        CorreoSMTP(
-            settings.smtp_host,
-            settings.smtp_puerto,
-            settings.smtp_usuario,
-            _secreto(settings.smtp_contrasena),
-            settings.smtp_remitente,
-            settings.smtp_seguridad,
-        )
-        if settings.proveedor_correo == "smtp"
-        else CorreoFalso()
-    )
+    voz: IVoz
+    match settings.proveedor_voz:
+        case "cloudflare":
+            voz = VozCloudflare(
+                cloudflare,
+                settings.cloudflare_modelo_voz,
+                settings.cloudflare_idioma_voz,
+                settings.cloudflare_neuronas_voz_minuto,
+            )
+        case "falso":
+            voz = VozFalsa()
+        case _:
+            voz = VozNoDisponible()
+
+    correo: ICorreo
+    match settings.proveedor_correo:
+        case "smtp":
+            correo = CorreoSMTP(
+                settings.smtp_host,
+                settings.smtp_puerto,
+                settings.smtp_usuario,
+                _secreto(settings.smtp_contrasena),
+                settings.smtp_remitente,
+                settings.smtp_seguridad,
+            )
+        case "ninguno":
+            correo = CorreoApagado()
+        case _:
+            correo = CorreoFalso()
     almacen: IAlmacen = (
         AlmacenS3(
             settings.s3_bucket,
@@ -188,6 +233,8 @@ def construir(settings: Settings) -> Contenedor:
             settings.s3_region,
             settings.s3_endpoint_url,
             settings.s3_cifrado_sse,
+            settings.s3_estilo_direccion,
+            settings.s3_checksum,
         )
         if settings.almacen == "s3"
         else AlmacenMemoria()
@@ -199,11 +246,13 @@ def construir(settings: Settings) -> Contenedor:
         vision_entrada_mtok=settings.precio_vision_entrada_mtok,
         vision_salida_mtok=settings.precio_vision_salida_mtok,
         imagen=settings.precio_imagen,
+        voz_mil_caracteres=settings.precio_voz_mil_caracteres,
     )
     orquestador = Orquestador(
         vision=vision,
         texto=texto,
         imagen=imagen,
+        voz=voz,
         moderacion=Moderacion(moderador),
         compositor=Compositor(recortador),
         almacen=almacen,
@@ -212,6 +261,7 @@ def construir(settings: Settings) -> Contenedor:
         espera_base_s=settings.espera_reintento_s,
         max_regeneraciones=settings.max_regeneraciones,
         timeout_s=settings.timeout_proveedor_s,
+        tiempo_maximo_s=_tiempo_maximo_cuento(settings),
     )
     motor = crear_motor(settings.database_url)
     return Contenedor(
@@ -222,6 +272,7 @@ def construir(settings: Settings) -> Contenedor:
         texto=texto,
         moderador=moderador,
         imagen=imagen,
+        voz=voz,
         correo=correo,
         almacen=almacen,
         orquestador=orquestador,
@@ -230,6 +281,8 @@ def construir(settings: Settings) -> Contenedor:
             settings.jwt_secreto.get_secret_value(),
             settings.jwt_minutos,
             settings.verificacion_horas,
+            settings.invitado_minutos,
         ),
         http=http,
+        invitados=TrabajosInvitado(settings.invitado_retencion_minutos * 60),
     )

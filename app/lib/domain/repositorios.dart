@@ -5,12 +5,28 @@ import 'entidades.dart';
 /// Contratos que la interfaz usa. Las implementaciones viven en `data/`;
 /// la presentación nunca habla con Dio ni con Hive directamente.
 
+/// Qué pasó al crear la cuenta.
+enum ResultadoRegistro {
+  /// Salió el correo de confirmación: hay que abrirlo antes de entrar.
+  correoEnviado,
+
+  /// La cuenta quedó creada pero el correo no salió: se puede pedir que se reenvíe.
+  correoNoSalio,
+
+  /// El servidor no pide confirmar el correo (`VERIFICAR_CORREO=false`): se puede entrar ya.
+  listaParaEntrar,
+}
+
 abstract interface class CuentasRepositorio {
-  Future<void> registrar({
+  /// Crea la cuenta (siempre con el consentimiento del adulto).
+  Future<ResultadoRegistro> registrar({
     required String email,
     required String contrasena,
     required bool aceptaConsentimiento,
   });
+
+  /// Vuelve a mandar el correo de confirmación (pide la contraseña para no ser un buzón abierto).
+  Future<void> reenviarVerificacion({required String email, required String contrasena});
 
   Future<void> iniciarSesion({required String email, required String contrasena});
 
@@ -28,10 +44,15 @@ abstract interface class CuentosRepositorio {
   Future<Identificacion> identificar(Uint8List dibujo);
 
   /// Encola el cuento y devuelve su id.
-  Future<String> crear({required String perfilId, required Uint8List dibujo, String? personaje});
+  Future<String> crear({
+    required String perfilId,
+    required Uint8List dibujo,
+    String? personaje,
+    String? nombre,
+  });
 
   /// Consulta hasta que el cuento sale de `en_proceso` y, si está listo,
-  /// descarga las páginas a la caché local.
+  /// descarga las páginas (imagen y narración) a la caché local.
   Future<Cuento> esperar(String cuentoId);
 
   /// Cuentos del perfil: los de la caché siempre; los del servidor si hay red.
@@ -39,4 +60,16 @@ abstract interface class CuentosRepositorio {
 
   /// Borrado a petición (servidor y caché).
   Future<void> borrar(String cuentoId);
+}
+
+/// Reproductor de la narración (just_audio en la app, falso en las pruebas).
+abstract interface class Reproductor {
+  /// `true` mientras suena. Pasa a `false` al terminar o al detenerlo.
+  Stream<bool> get reproduciendo;
+
+  Future<void> reproducir(Uint8List mp3);
+
+  Future<void> detener();
+
+  Future<void> liberar();
 }

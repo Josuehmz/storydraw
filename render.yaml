@@ -1,0 +1,75 @@
+# Blueprint de Render: el backend de StoryDraw como Web Service con Docker en el plan gratuito
+# (512 MB, se duerme a los 15 minutos sin uso, HTTPS incluido).
+#
+# Render → New → Blueprint → este repositorio. Las variables con `sync: false` las pide el panel
+# al crear el servicio: son secretas o dependen de tu cuenta. Aquí no va ningún valor real.
+# PORT lo pone Render y el Dockerfile ya lo usa. Las variables también llegan como build args;
+# el Dockerfile solo declara CON_REMBG, que aquí no se define (la imagen va sin rembg).
+services:
+  - type: web
+    name: storydraw-api
+    runtime: docker
+    plan: free
+    # rootDir limita qué cambios disparan un build; las dos rutas de Docker van desde la raíz
+    rootDir: backend
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /salud
+    # Cada build gasta minutos del plan gratuito: se despliega a mano (Manual Deploy)
+    autoDeployTrigger: "off"
+    envVars:
+      # ---- secretos (se escriben en el panel de Render)
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRETO
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      # ---- dependen del nombre del servicio (https://<servicio>.onrender.com)
+      - key: URL_PUBLICA
+        sync: false
+      - key: CORS_ORIGENES
+        sync: false
+      # ---- fijas
+      - key: ENTORNO
+        value: produccion
+      - key: PROVEEDOR_VISION
+        value: cloudflare
+      - key: PROVEEDOR_TEXTO
+        value: cloudflare
+      - key: PROVEEDOR_IMAGEN
+        value: cloudflare
+      # Sin OpenAI: Llama Guard + revisión infantil, ambas en Cloudflare Workers AI
+      - key: PROVEEDOR_MODERACION
+        value: llamaguard
+      # Sin correo por ahora: la cuenta nace confirmada
+      - key: PROVEEDOR_CORREO
+        value: ninguno
+      - key: VERIFICAR_CORREO
+        value: "false"
+      # 512 MB: recorte por umbral, la imagen no lleva rembg
+      - key: RECORTE
+        value: umbral
+      # Storage Bucket privado de Hugging Face por su API S3
+      - key: ALMACEN
+        value: s3
+      - key: S3_ENDPOINT_URL
+        value: https://s3.hf.co/Josuehmz
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_BUCKET
+        value: StoryDraw
+      - key: S3_CIFRADO_SSE
+        value: "false"
+      - key: S3_ESTILO_DIRECCION
+        value: path
+      - key: S3_CHECKSUM
+        value: when_required

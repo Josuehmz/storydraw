@@ -17,6 +17,7 @@ _limites: dict[str, str] = {
     "identificar": "10/minute",
     "cuentos_ip": "5/minute",
     "cuentos_cuenta": "30/day",
+    "invitado_ip": "3/minute;20/day",
 }
 
 
@@ -30,6 +31,11 @@ def clave_cuenta(request: Request) -> str:
     return f"cuenta:{tutor_id}" if tutor_id else clave_ip(request)
 
 
+def clave_invitado_ip(request: Request) -> str:
+    # Cupo propio de los invitados, separado del de las cuentas en la misma IP.
+    return "invitado:" + clave_ip(request)
+
+
 limiter = Limiter(
     key_func=clave_ip,
     # Única lectura directa del entorno: el limitador se crea al importar el módulo.
@@ -37,9 +43,19 @@ limiter = Limiter(
 )
 
 
-def configurar(auth: str, identificar: str, cuentos_ip: str, cuentos_cuenta: str) -> None:
+def configurar(
+    auth: str,
+    identificar: str,
+    cuentos_ip: str,
+    cuentos_cuenta: str,
+    invitado_ip: str = "3/minute;20/day",
+) -> None:
     _limites.update(
-        auth=auth, identificar=identificar, cuentos_ip=cuentos_ip, cuentos_cuenta=cuentos_cuenta
+        auth=auth,
+        identificar=identificar,
+        cuentos_ip=cuentos_ip,
+        cuentos_cuenta=cuentos_cuenta,
+        invitado_ip=invitado_ip,
     )
     limiter.reset()
 
@@ -58,3 +74,7 @@ def limite_cuentos_ip() -> str:
 
 def limite_cuentos_cuenta() -> str:
     return _limites["cuentos_cuenta"]
+
+
+def limite_invitado_ip() -> str:
+    return _limites["invitado_ip"]

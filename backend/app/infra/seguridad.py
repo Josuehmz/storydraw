@@ -10,7 +10,7 @@ import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
-TipoToken = Literal["acceso", "verificacion"]
+TipoToken = Literal["acceso", "verificacion", "invitado"]
 _ALGORITMO = "HS256"
 
 
@@ -35,15 +35,24 @@ class Hasher:
 
 
 class Tokens:
-    def __init__(self, secreto: str, minutos_acceso: int, horas_verificacion: int):
+    def __init__(
+        self,
+        secreto: str,
+        minutos_acceso: int,
+        horas_verificacion: int,
+        minutos_invitado: int = 120,
+    ):
         self._secreto = secreto
         self._minutos = minutos_acceso
         self._horas = horas_verificacion
+        self._minutos_invitado = minutos_invitado
 
     def emitir(self, sujeto: uuid.UUID, tipo: TipoToken, rol: str = "tutor") -> tuple[str, int]:
-        duracion = (
-            timedelta(minutes=self._minutos) if tipo == "acceso" else timedelta(hours=self._horas)
-        )
+        duracion = {
+            "acceso": timedelta(minutes=self._minutos),
+            "verificacion": timedelta(hours=self._horas),
+            "invitado": timedelta(minutes=self._minutos_invitado),
+        }[tipo]
         ahora = datetime.now(UTC)
         carga = {
             "sub": str(sujeto),

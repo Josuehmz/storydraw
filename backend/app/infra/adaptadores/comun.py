@@ -147,12 +147,17 @@ PROMPT_CUENTO = (
     "mostrar lo que cuenta el texto de esa página (nubes, un río, un libro sobre una "
     "roca, la luna, lluvia). Mantén el mismo lugar y la misma paleta de colores entre "
     "páginas para que el estilo sea coherente.\n"
-    "6. {rasgos}"
+    "6. {rasgos}\n"
+    "7. {nombre}"
 )
 
 _RASGOS_CONOCIDOS = (
     "Así es el protagonista en el dibujo ({atributos}). Descríbelo solo con esos rasgos: "
     "no inventes otros colores, pelaje, ropa ni partes que no estén en el dibujo."
+)
+_REGLA_NOMBRE = (
+    "El niño le puso nombre al protagonista: se llama «{nombre}». Llámalo siempre por ese "
+    "nombre en el título y en todas las páginas, como un nombre propio."
 )
 _RASGOS_DESCONOCIDOS = (
     "No conoces los colores ni los rasgos del dibujo: no los describas ni los inventes."
@@ -196,18 +201,32 @@ def prompt_fondo(descripcion: str) -> str:
 
 
 def mensaje_cuento(
-    personaje: str, edad: int, paginas: int, atributos: AtributosDibujo | None = None
+    personaje: str,
+    edad: int,
+    paginas: int,
+    atributos: AtributosDibujo | None = None,
+    nombre: str = "",
 ) -> str:
     if atributos is not None and not atributos.vacio:
         rasgos = _RASGOS_CONOCIDOS.format(atributos=atributos.como_texto())
     else:
         rasgos = _RASGOS_DESCONOCIDOS
-    return PROMPT_CUENTO.format(edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos)
+    nombre = nombre.strip()
+    regla_nombre = (
+        _REGLA_NOMBRE.format(nombre=nombre) if nombre else "No tiene nombre: llámalo por lo que es."
+    )
+    return PROMPT_CUENTO.format(
+        edad=edad, personaje=personaje, paginas=paginas, rasgos=rasgos, nombre=regla_nombre
+    )
 
 
 def mensaje_solicitud(solicitud: SolicitudCuento) -> str:
     return mensaje_cuento(
-        solicitud.personaje, solicitud.edad, solicitud.paginas, solicitud.atributos
+        solicitud.personaje,
+        solicitud.edad,
+        solicitud.paginas,
+        solicitud.atributos,
+        solicitud.nombre,
     )
 
 

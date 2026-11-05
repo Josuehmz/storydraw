@@ -1,5 +1,6 @@
 """Dibujos y cuentos: identificación asistida, creación, consulta, medios y borrado."""
 
+import asyncio
 import uuid
 
 from fastapi import (
@@ -35,7 +36,8 @@ async def _leer_dibujo(c: Contenedor, archivo: UploadFile) -> bytes:
     if len(datos) > maximo:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "dibujo_demasiado_grande")
     try:
-        return abrir_dibujo(datos)
+        # Pillow con un dibujo grande tarda: en un hilo, para no frenar otras peticiones.
+        return await asyncio.to_thread(abrir_dibujo, datos)
     except DibujoInvalido as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "dibujo_invalido") from exc
 
@@ -70,6 +72,7 @@ async def crear_cuento(
     dibujo: UploadFile = File(...),
     perfil_id: uuid.UUID = Form(...),
     personaje: str | None = Form(None, max_length=120),
+    nombre: str | None = Form(None, max_length=40),
     tutor: Tutor = Depends(tutor_con_consentimiento),
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
@@ -81,7 +84,7 @@ async def crear_cuento(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "perfil_inexistente")
     png = await _leer_dibujo(c, dibujo)
     cuento = await repo.crear_cuento(tutor.id, perfil.id)
-    tareas.add_task(procesar_cuento, c, cuento.id, png, personaje, perfil.edad)
+    tareas.add_task(procesar_cuento, c, cuento.id, png, personaje, perfil.edad, nombre)
     return CuentoCreado(id=cuento.id, estado=cuento.estado)
 
 
@@ -101,6 +104,32 @@ async def consultar(
     return a_salida(await _cuento_o_404(repo, tutor, cuento_id))
 
 
+async def _medio(
+    c: Contenedor,
+    repo: Repositorio,
+    tutor: Tutor,
+    cuento_id: uuid.UUID,
+    numero: int,
+    tipo: str,
+) -> Response:
+    cuento = await _cuento_o_404(repo, tutor, cuento_id)
+    pagina = next((p for p in cuento.paginas if p.numero == numero), None)
+    if cuento.estado != "listo" or pagina is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "pagina_inexistente")
+    clave = pagina.imagen_clave if tipo == "imagen" else pagina.audio_clave
+    if not clave:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "sin_audio")
+    try:
+        datos = await c.almacen.leer(clave)
+    except ObjetoNoEncontrado as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "objeto_inexistente") from exc
+    return Response(
+        datos,
+        media_type="image/png" if tipo == "imagen" else "audio/mpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
 @router.get("/cuentos/{cuento_id}/paginas/{numero}/imagen", response_class=Response)
 async def imagen(
     cuento_id: uuid.UUID,
@@ -109,17 +138,19 @@ async def imagen(
     c: Contenedor = Depends(contenedor),
     repo: Repositorio = Depends(repositorio),
 ) -> Response:
-    cuento = await _cuento_o_404(repo, tutor, cuento_id)
-    pagina = next((p for p in cuento.paginas if p.numero == numero), None)
-    if cuento.estado != "listo" or pagina is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "pagina_inexistente")
-    try:
-        datos = await c.almacen.leer(pagina.imagen_clave)
-    except ObjetoNoEncontrado as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "objeto_inexistente") from exc
-    return Response(
-        datos, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"}
-    )
+    return await _medio(c, repo, tutor, cuento_id, numero, "imagen")
+
+
+@router.get("/cuentos/{cuento_id}/paginas/{numero}/audio", response_class=Response)
+async def audio(
+    cuento_id: uuid.UUID,
+    numero: int,
+    tutor: Tutor = Depends(tutor_con_consentimiento),
+    c: Contenedor = Depends(contenedor),
+    repo: Repositorio = Depends(repositorio),
+) -> Response:
+    """La narración de una página (MP3). 404 `sin_audio` si esa página no la tiene."""
+    return await _medio(c, repo, tutor, cuento_id, numero, "audio")
 
 
 @router.delete("/cuentos/{cuento_id}", status_code=status.HTTP_204_NO_CONTENT)

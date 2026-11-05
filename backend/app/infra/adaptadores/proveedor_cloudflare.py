@@ -11,6 +11,7 @@ con `CLOUDFLARE_USD_POR_MIL_NEURONAS`, para el costo por cuento del panel de ope
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import io
@@ -23,11 +24,14 @@ from app.dominio.puertos import (
     IImagen,
     ITexto,
     IVision,
+    IVoz,
+    ResultadoAudio,
     ResultadoImagen,
     ResultadoVision,
     SolicitudCuento,
     Uso,
 )
+from app.infra.adaptadores.audio import es_wav, wav_a_mp3
 from app.infra.adaptadores.comun import (
     ESQUEMA_CUENTO,
     ESQUEMA_VISION,
@@ -40,6 +44,9 @@ from app.infra.adaptadores.comun import (
     mensaje_solicitud,
     prompt_fondo,
 )
+
+# Solo si el audio no viene en WAV y no se puede medir: unos 15 caracteres por segundo de habla.
+CARACTERES_POR_SEGUNDO = 15
 
 URL_BASE = "https://api.cloudflare.com/client/v4/accounts/{cuenta}/ai/run/{modelo}"
 
@@ -69,12 +76,18 @@ class ClienteCloudflare:
         return neuronas / 1000 * self.usd_por_mil_neuronas
 
     async def run(self, modelo: str, cuerpo: dict) -> httpx.Response:
-        respuesta = await self._http.post(
-            URL_BASE.format(cuenta=self._cuenta, modelo=modelo),
-            json=cuerpo,
-            headers={"Authorization": f"Bearer {self._token}"},
-            timeout=httpx.Timeout(self.timeout_s, connect=10.0),
-        )
+        # El tope de httpx es por lectura: un cuerpo que llega a goteo nunca lo agota. El
+        # tope de la llamada entera lo pone el orquestador (`wait_for` con `timeout_s`).
+        try:
+            respuesta = await self._http.post(
+                URL_BASE.format(cuenta=self._cuenta, modelo=modelo),
+                json=cuerpo,
+                headers={"Authorization": f"Bearer {self._token}"},
+                timeout=httpx.Timeout(self.timeout_s, connect=10.0),
+            )
+        except httpx.TimeoutException as exc:
+            # Mismo trato que el tope del orquestador: un reintento y luego falla limpio.
+            raise TimeoutError(f"Cloudflare no respondió a tiempo ({modelo})") from exc
         if respuesta.status_code >= 400:
             raise ErrorProveedor(f"Cloudflare {respuesta.status_code}: {_errores(respuesta)}")
         return respuesta
@@ -234,14 +247,55 @@ class ImagenCloudflare(IImagen):
             self._modelo, {"prompt": prompt_fondo(descripcion)[:2048], "steps": self._pasos}
         )
         crudo = _b64(resultado.get("image"), "la imagen")
-        try:
-            with Image.open(io.BytesIO(crudo)) as img:
-                ancho, alto = img.size
-                salida = io.BytesIO()
-                img.convert("RGB").save(salida, format="PNG")
-        except OSError as exc:
-            raise ErrorProveedor("la imagen de Cloudflare no se puede abrir") from exc
+        # Decodificar y recodificar es CPU de Pillow: en un hilo, fuera del bucle de eventos.
+        png, (ancho, alto) = await asyncio.to_thread(_jpeg_a_png, crudo)
         teselas = math.ceil(ancho / 512) * math.ceil(alto / 512)
         neuronas = teselas * self._neuronas_tesela + self._pasos * self._neuronas_paso
         uso = Uso(imagenes=1, neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
-        return ResultadoImagen(salida.getvalue(), uso)
+        return ResultadoImagen(png, uso)
+
+
+def _jpeg_a_png(crudo: bytes) -> tuple[bytes, tuple[int, int]]:
+    try:
+        with Image.open(io.BytesIO(crudo)) as img:
+            tamano = img.size
+            salida = io.BytesIO()
+            img.convert("RGB").save(salida, format="PNG")
+    except OSError as exc:
+        raise ErrorProveedor("la imagen de Cloudflare no se puede abrir") from exc
+    return salida.getvalue(), tamano
+
+
+class VozCloudflare(IVoz):
+    """MeloTTS: `{"prompt", "lang"}` -> `{"audio": base64}`; hoy llega como WAV y se pasa a MP3.
+
+    Las neuronas se cobran por minuto de audio (18,63 por minuto con la tarifa publicada),
+    así que se calculan con la duración real del WAV y no con el largo del texto.
+    """
+
+    proveedor = "cloudflare"
+
+    def __init__(
+        self, cliente: ClienteCloudflare, modelo: str, idioma: str, neuronas_minuto: float
+    ):
+        self._cliente = cliente
+        self._modelo = modelo
+        self._idioma = idioma
+        self._neuronas_minuto = neuronas_minuto
+        self.timeout_s = cliente.timeout_s
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        resultado = await self._cliente.run_json(
+            self._modelo, {"prompt": texto, "lang": self._idioma}
+        )
+        crudo = _b64(resultado.get("audio"), "el audio")
+        if es_wav(crudo):
+            mp3, segundos = wav_a_mp3(crudo)
+        else:
+            # Si algún día Cloudflare devuelve ya MP3, se entrega tal cual.
+            mp3, segundos = crudo, len(texto) / CARACTERES_POR_SEGUNDO
+        if not mp3:
+            raise ErrorProveedor("Cloudflare devolvió un audio vacío")
+        neuronas = segundos / 60 * self._neuronas_minuto
+        uso = Uso(caracteres=len(texto), neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
+        return ResultadoAudio(mp3, uso)

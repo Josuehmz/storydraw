@@ -19,7 +19,9 @@ from app.dominio.puertos import (
     IModerador,
     ITexto,
     IVision,
+    IVoz,
     PaginaTexto,
+    ResultadoAudio,
     ResultadoImagen,
     ResultadoVision,
     SolicitudCuento,
@@ -80,7 +82,7 @@ class TextoFalso(ITexto, IModerador):
             raise ProveedorCaido("fallo transitorio")
         if self.cuentos_forzados:
             return self.cuentos_forzados.pop(0)
-        p = solicitud.personaje
+        p = solicitud.nombre or solicitud.personaje
         paginas = [
             PaginaTexto(f"Había una vez {p} que soñaba con volar entre las nubes.", "meadow"),
             PaginaTexto(f"Un día, {p} encontró un mapa brillante junto al río.", "river"),
@@ -135,6 +137,38 @@ class CorreoFalso(ICorreo):
 
     def __init__(self) -> None:
         self.enviados: list[tuple[str, str, str]] = []
+        self.html: list[str | None] = []
+        self.fallar = False
 
-    async def enviar(self, para: str, asunto: str, cuerpo: str) -> None:
+    async def enviar(self, para: str, asunto: str, cuerpo: str, html: str | None = None) -> None:
+        if self.fallar:
+            raise ProveedorCaido("correo caído")
         self.enviados.append((para, asunto, cuerpo))
+        self.html.append(html)
+
+
+class VozNoDisponible(IVoz):
+    """`PROVEEDOR_VOZ=ninguno`: el cuento se entrega escrito, con el aviso de sin narración."""
+
+    proveedor = "ninguno"
+    disponible = False
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        raise ProveedorCaido("sin proveedor de voz configurado")
+
+
+class VozFalsa(IVoz):
+    proveedor = "falso"
+
+    def __init__(self) -> None:
+        self.fallar = False
+        self.llamadas = 0
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        self.llamadas += 1
+        if self.fallar:
+            raise ProveedorCaido("voz caída")
+        # Cabecera ID3 mínima: suficiente para probar el flujo, no es audio real.
+        return ResultadoAudio(
+            b"ID3\x04\x00\x00\x00\x00\x00\x00" + texto.encode()[:64], Uso(caracteres=len(texto))
+        )

@@ -13,6 +13,7 @@ import 'package:storydraw/data/cache_cuentos.dart';
 import 'package:storydraw/data/repositorios_api.dart';
 import 'package:storydraw/data/sesion_local.dart';
 import 'package:storydraw/domain/entidades.dart';
+import 'package:storydraw/domain/repositorios.dart';
 
 /// Adaptador HTTP falso: responde según la ruta y registra cada petición.
 class AdaptadorFalso implements HttpClientAdapter {
@@ -51,7 +52,7 @@ ResponseBody bytes(List<int> datos) => ResponseBody.fromBytes(
   },
 );
 
-Map<String, dynamic> cuentoJson(String id, String estado) => {
+Map<String, dynamic> cuentoJson(String id, String estado, {bool conAudio = true}) => {
   'id': id,
   'perfil_id': 'p1',
   'estado': estado,
@@ -63,7 +64,12 @@ Map<String, dynamic> cuentoJson(String id, String estado) => {
       ? <Object>[]
       : [
           for (var n = 1; n <= 3; n++)
-            {'numero': n, 'texto': 'Página $n', 'imagen_url': '/v1/cuentos/$id/paginas/$n/imagen'},
+            {
+              'numero': n,
+              'texto': 'Página $n',
+              'imagen_url': '/v1/cuentos/$id/paginas/$n/imagen',
+              'audio_url': conAudio ? '/v1/cuentos/$id/paginas/$n/audio' : null,
+            },
         ],
 };
 
@@ -121,6 +127,7 @@ void main() {
         return json(cuentoJson('c9', consultas < 3 ? 'en_proceso' : 'listo'));
       }
       if (o.path.endsWith('/imagen')) return bytes([137, 80, 78, 71]);
+      if (o.path.endsWith('/audio')) return bytes([73, 68, 51]);
       return json({}, 404);
     };
 
@@ -132,12 +139,40 @@ void main() {
     expect(consultas, 3);
     expect(cuento.estado, EstadoCuento.listo);
     expect(cuento.paginas.every((p) => p.imagen != null), isTrue);
-    // Sin narración: solo se piden las imágenes, nunca un audio
-    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), isEmpty);
+    // Cada página baja también su narración
+    expect(cuento.paginas.every((p) => p.tieneAudio), isTrue);
+    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), hasLength(3));
 
     final guardado = cache.leer('c9')!;
     expect(guardado.titulo, 'El dragón');
     expect(guardado.paginas.first.imagen, [137, 80, 78, 71]);
+    // La narración queda en Hive: se relee sin conexión
+    expect(guardado.paginas.first.audio, [73, 68, 51]);
+  });
+
+  test('un cuento sin narración no pide audio y se guarda igual', () async {
+    http.manejar = (o) {
+      if (o.path == '/v1/cuentos/c5') return json(cuentoJson('c5', 'listo', conAudio: false));
+      if (o.path.endsWith('/imagen')) return bytes([1]);
+      return json({}, 404);
+    };
+    final cuento = await repo.esperar('c5');
+    expect(cuento.paginas.any((p) => p.tieneAudio), isFalse);
+    expect(http.peticiones.where((o) => o.path.endsWith('/audio')), isEmpty);
+    expect(cache.leer('c5')!.paginas, hasLength(3));
+  });
+
+  test('si falla bajar un audio, el cuento llega igual y esa página queda muda', () async {
+    http.manejar = (o) {
+      if (o.path == '/v1/cuentos/c6') return json(cuentoJson('c6', 'listo'));
+      if (o.path.endsWith('/imagen')) return bytes([1]);
+      if (o.path.endsWith('/paginas/2/audio')) return json({}, 500);
+      if (o.path.endsWith('/audio')) return bytes([9]);
+      return json({}, 404);
+    };
+    final cuento = await repo.esperar('c6');
+    expect(cuento.estado, EstadoCuento.listo);
+    expect(cuento.paginas.map((p) => p.tieneAudio), [true, false, true]);
   });
 
   test('un cuento rechazado no se descarga ni se guarda', () async {
@@ -145,6 +180,22 @@ void main() {
     final cuento = await repo.esperar('c3');
     expect(cuento.estado, EstadoCuento.rechazado);
     expect(cache.contiene('c3'), isFalse);
+  });
+
+  test('si el cuento no llega en la espera máxima, deja de consultar y da un error', () async {
+    const corta = AppConfig(
+      apiUrl: 'http://backend.prueba',
+      intervaloConsulta: Duration(milliseconds: 10),
+      esperaMaxima: Duration(milliseconds: 50),
+    );
+    final repoCorto = CuentosRepositorioApi(dio, cache, corta);
+    http.manejar = (o) => json(cuentoJson('c4', 'en_proceso'));
+    await expectLater(
+      repoCorto.esperar('c4'),
+      throwsA(isA<ErrorApi>().having((e) => e.tipo, 'tipo', TipoError.servidor)),
+    );
+    expect(http.peticiones.length, lessThanOrEqualTo(6));
+    expect(cache.contiene('c4'), isFalse);
   });
 
   test('sin conexión, la biblioteca se relee desde Hive', () async {
@@ -224,6 +275,53 @@ void main() {
       expect(d.options.baseUrl, 'http://10.0.2.2:8000');
       expect(d.options.receiveTimeout, const Duration(seconds: 90));
     });
+  });
+
+  test('cerrar sesión borra del teléfono los cuentos guardados y la sesión', () async {
+    SharedPreferences.setMockInitialValues({});
+    final sesion = SesionLocal(await SharedPreferences.getInstance());
+    await sesion.guardarToken('t');
+    await sesion.elegirPerfil(id: 'p1', apodo: 'Luna', edad: 7);
+    final cuento = Cuento.desdeJson(cuentoJson('c1', 'listo'));
+    await cache.guardar(
+      cuento.conPaginas([
+        for (final p in cuento.paginas) p.conMedios(imagen: Uint8List(2), audio: Uint8List(2)),
+      ]),
+    );
+    expect(cache.contiene('c1'), isTrue);
+
+    await CuentasRepositorioApi(dio, sesion, cache).cerrarSesion();
+
+    expect(cache.contiene('c1'), isFalse);
+    expect(cache.dePerfil('p1'), isEmpty);
+    expect([sesion.token, sesion.perfilId], [null, null]);
+  });
+
+  test('el registro distingue correo enviado, correo que no salió y cuenta lista', () async {
+    SharedPreferences.setMockInitialValues({});
+    final cuentas = CuentasRepositorioApi(
+      dio,
+      SesionLocal(await SharedPreferences.getInstance()),
+      cache,
+    );
+    Future<ResultadoRegistro> con(Map<String, dynamic> respuesta) {
+      http.manejar = (o) => json(respuesta, 201);
+      return cuentas.registrar(email: 'a@b.com', contrasena: 'x' * 12, aceptaConsentimiento: true);
+    }
+
+    expect(
+      await con({'verificado': false, 'correo_enviado': true}),
+      ResultadoRegistro.correoEnviado,
+    );
+    expect(
+      await con({'verificado': false, 'correo_enviado': false}),
+      ResultadoRegistro.correoNoSalio,
+    );
+    // VERIFICAR_CORREO=false en el servidor: la cuenta nace confirmada
+    expect(
+      await con({'verificado': true, 'correo_enviado': false}),
+      ResultadoRegistro.listaParaEntrar,
+    );
   });
 
   test('la sesión guarda el token y el perfil en SharedPreferences', () async {

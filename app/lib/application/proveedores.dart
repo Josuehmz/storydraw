@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
 import '../core/http.dart';
+import '../core/correo.dart';
 import '../data/cache_cuentos.dart';
+import '../data/enlaces_app.dart';
 import '../data/repositorios_api.dart';
+import '../data/repositorios_invitado.dart';
+import '../data/reproductor_just_audio.dart';
 import '../data/sesion_local.dart';
 import '../domain/entidades.dart';
 import '../domain/repositorios.dart';
@@ -27,7 +31,21 @@ final dioProvider = Provider<Dio>((ref) {
   return crearDio(ref.watch(configProvider), token: () => sesion.token);
 });
 
-final cuentasRepositorioProvider = Provider<CuentasRepositorio>(
+final cuentasRepositorioProvider = Provider<CuentasRepositorio>((ref) {
+  if (ref.watch(sesionProvider.select((s) => s.invitado))) {
+    return ref.watch(cuentasInvitadoProvider);
+  }
+  return ref.watch(cuentasApiProvider);
+});
+
+/// Cuentas con el backend, sin depender de la sesión. `SesionNotifier` usa este
+/// (y `cuentasInvitadoProvider`) en vez de `cuentasRepositorioProvider`: ese depende
+/// de `sesionProvider`, y Riverpod 3 lanza `CircularDependencyError` si el notifier
+/// lee un provider que depende de él (así fallaban «Cerrar sesión» y «Salir del modo
+/// invitado»).
+///
+/// Va tipado con el contrato para que las pruebas lo sustituyan por un falso.
+final cuentasApiProvider = Provider<CuentasRepositorio>(
   (ref) => CuentasRepositorioApi(
     ref.watch(dioProvider),
     ref.watch(sesionLocalProvider),
@@ -35,21 +53,49 @@ final cuentasRepositorioProvider = Provider<CuentasRepositorio>(
   ),
 );
 
-final cuentosRepositorioProvider = Provider<CuentosRepositorio>(
-  (ref) => CuentosRepositorioApi(
+/// Un solo reproductor para toda la app: así dos páginas nunca suenan a la vez.
+final reproductorProvider = Provider<Reproductor>((ref) {
+  final r = ReproductorJustAudio();
+  ref.onDispose(r.liberar);
+  return r;
+});
+
+final cuentosRepositorioProvider = Provider<CuentosRepositorio>((ref) {
+  if (ref.watch(sesionProvider.select((s) => s.invitado))) {
+    return CuentosRepositorioInvitado(
+      ref.watch(dioProvider),
+      ref.watch(cacheProvider),
+      ref.watch(configProvider),
+      ref.watch(sesionLocalProvider),
+      ref.watch(cuentasInvitadoProvider),
+    );
+  }
+  return CuentosRepositorioApi(
     ref.watch(dioProvider),
     ref.watch(cacheProvider),
     ref.watch(configProvider),
+  );
+});
+
+/// Modo invitado (solo pruebas locales): perfiles y cuentos solo en el dispositivo.
+final cuentasInvitadoProvider = Provider<CuentasRepositorioInvitado>(
+  (ref) => CuentasRepositorioInvitado(
+    ref.watch(dioProvider),
+    ref.watch(sesionLocalProvider),
+    ref.watch(cacheProvider),
   ),
 );
 
 // ------------------------------------------------------------------- sesión
 
 class EstadoSesion {
-  const EstadoSesion({required this.autenticado, this.perfil});
+  const EstadoSesion({required this.autenticado, this.perfil, this.invitado = false});
 
   final bool autenticado;
   final Perfil? perfil;
+
+  /// Entró como invitado: sin cuenta, todo se guarda solo en el dispositivo.
+  final bool invitado;
 }
 
 class SesionNotifier extends Notifier<EstadoSesion> {
@@ -61,6 +107,7 @@ class SesionNotifier extends Notifier<EstadoSesion> {
     final id = local.perfilId;
     return EstadoSesion(
       autenticado: local.token != null,
+      invitado: local.token != null && local.invitado,
       perfil: id == null
           ? null
           : Perfil(id: id, apodo: local.perfilApodo ?? '', edad: local.perfilEdad ?? 8),
@@ -68,22 +115,33 @@ class SesionNotifier extends Notifier<EstadoSesion> {
   }
 
   Future<void> iniciar(String email, String contrasena) async {
-    await ref.read(cuentasRepositorioProvider).iniciarSesion(email: email, contrasena: contrasena);
-    state = const EstadoSesion(autenticado: true);
-  }
-
-  Future<void> elegirPerfil(Perfil perfil) async {
-    await _local.elegirPerfil(id: perfil.id, apodo: perfil.apodo, edad: perfil.edad);
-    state = EstadoSesion(autenticado: true, perfil: perfil);
-  }
-
-  Future<void> cambiarPerfil() async {
+    await ref.read(cuentasApiProvider).iniciarSesion(email: email, contrasena: contrasena);
+    // Un perfil guardado de antes puede ser de otra cuenta: cada inicio de sesión pide elegir.
     await _local.olvidarPerfil();
     state = const EstadoSesion(autenticado: true);
   }
 
+  /// Solo existe si la app se compiló con `MODO_INVITADO=true`.
+  Future<void> entrarComoInvitado() async {
+    await ref.read(cuentasInvitadoProvider).entrar();
+    state = const EstadoSesion(autenticado: true, invitado: true);
+  }
+
+  Future<void> elegirPerfil(Perfil perfil) async {
+    await _local.elegirPerfil(id: perfil.id, apodo: perfil.apodo, edad: perfil.edad);
+    state = EstadoSesion(autenticado: true, perfil: perfil, invitado: state.invitado);
+  }
+
+  Future<void> cambiarPerfil() async {
+    await _local.olvidarPerfil();
+    state = EstadoSesion(autenticado: true, invitado: state.invitado);
+  }
+
   Future<void> cerrar() async {
-    await ref.read(cuentasRepositorioProvider).cerrarSesion();
+    final CuentasRepositorio cuentas = state.invitado
+        ? ref.read(cuentasInvitadoProvider)
+        : ref.read(cuentasApiProvider);
+    await cuentas.cerrarSesion();
     state = const EstadoSesion(autenticado: false);
   }
 }
@@ -112,4 +170,29 @@ class BibliotecaNotifier extends AsyncNotifier<List<Cuento>> {
 
 final bibliotecaProvider = AsyncNotifierProvider<BibliotecaNotifier, List<Cuento>>(
   BibliotecaNotifier.new,
+);
+
+// ------------------------------------------------------- correo confirmado (enlace)
+
+final enlacesAppProvider = Provider<EnlacesApp>((ref) => EnlacesAppReal());
+
+/// El correo recién confirmado, llegado por el enlace que reabre la app. La pantalla de acceso
+/// lo consume (prellena el correo y avisa) y lo limpia. Vacío = confirmado, sin correo en el enlace.
+class ConfirmacionCorreoNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  /// Devuelve true si el enlace era el de «correo confirmado».
+  bool alAbrirEnlace(Uri enlace) {
+    final correo = correoConfirmadoDe(enlace);
+    if (correo == null) return false;
+    state = correo;
+    return true;
+  }
+
+  void consumir() => state = null;
+}
+
+final confirmacionCorreoProvider = NotifierProvider<ConfirmacionCorreoNotifier, String?>(
+  ConfirmacionCorreoNotifier.new,
 );

@@ -9,6 +9,7 @@ enum TipoError {
   datosInvalidos,
   noEncontrado,
   conflicto,
+  dominioNoPermitido,
   servidor,
 }
 
@@ -49,7 +50,12 @@ class ErrorApi implements Exception {
           return ErrorApi(TipoError.conflicto, detalle);
         case 413:
         case 422:
-          return ErrorApi(TipoError.datosInvalidos, detalle);
+          return ErrorApi(
+            detalle == 'dominio_no_permitido'
+                ? TipoError.dominioNoPermitido
+                : TipoError.datosInvalidos,
+            detalle,
+          );
         case 429:
           return ErrorApi(TipoError.limite, detalle);
       }

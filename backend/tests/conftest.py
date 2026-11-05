@@ -31,7 +31,9 @@ def settings_de_prueba(ruta_bd: Path, **cambios) -> Settings:
         proveedor_texto="falso",
         proveedor_moderacion="falso",
         proveedor_imagen="falso",
+        proveedor_voz="falso",
         proveedor_correo="falso",
+        dominios_correo="",  # las pruebas usan @correo.com; la regla tiene sus propias pruebas
         almacen="memoria",
         recorte="umbral",
         reintentos_por_paso=1,
@@ -43,6 +45,7 @@ def settings_de_prueba(ruta_bd: Path, **cambios) -> Settings:
         limite_identificar="1000/minute",
         limite_cuentos_ip="1000/minute",
         limite_cuentos_cuenta="1000/minute",
+        limite_invitado_ip="1000/minute",
     )
     base.update(cambios)
     return Settings(_env_file=None, **base)

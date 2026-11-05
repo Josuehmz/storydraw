@@ -29,6 +29,9 @@ class RegistroSalida(BaseModel):
     email: EmailStr
     verificado: bool
     version_consentimiento: str
+    # False = la cuenta se creó pero el correo no salió: la app ofrece «Reenviar correo».
+    # Con verificado=True (VERIFICAR_CORREO=false) no hay correo: se puede entrar ya.
+    correo_enviado: bool = True
 
 
 class LoginEntrada(BaseModel):
@@ -76,6 +79,8 @@ class PaginaSalida(BaseModel):
     numero: int
     texto: str
     imagen_url: str
+    # None = esta página no tiene narración (voz apagada o falló); la app no muestra el botón
+    audio_url: str | None = None
 
 
 class CuentoSalida(BaseModel):
@@ -95,6 +100,25 @@ class CuentoResumen(BaseModel):
     personaje: str | None
     portada_url: str | None
     creado_en: datetime
+
+
+class PaginaInvitado(BaseModel):
+    numero: int
+    texto: str
+    imagen_png_base64: str
+    # Narración de la página (MP3). Null = la voz está apagada o esa página falló.
+    audio_mp3_base64: str | None = None
+
+
+class CuentoInvitadoSalida(BaseModel):
+    """El cuento del invitado viaja entero (texto, imágenes y voz) y el servidor lo olvida."""
+
+    id: uuid.UUID
+    estado: Literal["en_proceso", "listo", "rechazado", "fallido"]
+    titulo: str | None = None
+    personaje: str | None = None
+    avisos: list[str] = []
+    paginas: list[PaginaInvitado] = []
 
 
 class PasoMetrica(BaseModel):

@@ -1,9 +1,14 @@
-import 'package:flutter/material.dart';
+import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../application/proveedores.dart';
 import '../../core/tema.dart';
 
-/// Botón redondo solo con icono, grande, para el niño.
-class BotonIcono extends StatelessWidget {
+/// Botón redondo solo con icono, grande, para el niño. Se siente «de bulto»: borde
+/// blanco, sombra suave del mismo color y un pequeño rebote al pulsarlo.
+class BotonIcono extends StatefulWidget {
   const BotonIcono({
     super.key,
     required this.icono,
@@ -19,24 +24,53 @@ class BotonIcono extends StatelessWidget {
   /// Para lectores de pantalla; no se muestra.
   final String etiqueta;
   final Color color;
+
+  /// Tamaño visual. El área que se toca nunca baja de [kToqueMinimo].
   final double tamano;
 
   @override
+  State<BotonIcono> createState() => _BotonIconoState();
+}
+
+class _BotonIconoState extends State<BotonIcono> {
+  bool _presionado = false;
+
+  @override
   Widget build(BuildContext context) {
+    final activo = widget.alPulsar != null;
+    final lado = widget.tamano < kToqueMinimo ? kToqueMinimo : widget.tamano;
+    final color = activo ? widget.color : Colors.grey.shade300;
     return Semantics(
       button: true,
-      label: etiqueta,
+      enabled: activo,
+      label: widget.etiqueta,
       child: SizedBox(
-        width: tamano,
-        height: tamano,
-        child: Material(
-          color: alPulsar == null ? Colors.grey.shade300 : color,
-          shape: const CircleBorder(),
-          elevation: 3,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: alPulsar,
-            child: Icon(icono, color: Colors.white, size: tamano * 0.5),
+        width: lado,
+        height: lado,
+        child: Center(
+          child: AnimatedScale(
+            scale: _presionado ? 0.92 : 1,
+            duration: const Duration(milliseconds: 90),
+            child: Container(
+              width: widget.tamano,
+              height: widget.tamano,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color,
+                border: Border.all(color: Colors.white, width: widget.tamano >= 80 ? 4 : 3),
+                boxShadow: activo ? sombraSuave(widget.color) : null,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: widget.alPulsar,
+                  onHighlightChanged: (v) => setState(() => _presionado = v),
+                  child: Icon(widget.icono, color: Colors.white, size: widget.tamano * 0.5),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -54,19 +88,32 @@ class MensajeIA extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       key: const Key('mensaje-ia'),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colores.violeta, borderRadius: BorderRadius.circular(20)),
+      padding: const EdgeInsets.fromLTRB(14, 14, 18, 14),
+      decoration: BoxDecoration(
+        color: Colores.violeta,
+        borderRadius: BorderRadius.circular(Radios.grande),
+        boxShadow: sombraSuave(Colores.violeta),
+      ),
       child: Row(
         children: [
-          const Icon(Icons.auto_awesome, color: Colors.white, size: 36),
-          const SizedBox(width: 12),
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.22),
+            ),
+            child: const Icon(Icons.auto_awesome, color: Colores.amarillo, size: 32),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Text(
               texto,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 19,
-                fontWeight: FontWeight.w600,
+                height: 1.3,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -86,23 +133,28 @@ class AvisoInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colores.azulInfo.withValues(alpha: 0.12),
+        color: Colores.azulInfo.withValues(alpha: 0.1),
         border: Border.all(color: Colores.azulInfo, width: 2),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(Radios.medio),
       ),
       child: Row(
         children: [
           const Icon(Icons.info_outline, color: Colores.azulInfo, size: 32),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'Información importante',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: Colores.azulInfo),
+                  style: TextStyle(
+                    fontFamily: 'Fredoka',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Colores.azulInfo,
+                  ),
                 ),
                 Text(texto, style: const TextStyle(fontSize: 16)),
               ],
@@ -110,6 +162,67 @@ class AvisoInfo extends StatelessWidget {
           ),
           ?accion,
         ],
+      ),
+    );
+  }
+}
+
+/// Texto del aviso del modo invitado (solo pruebas locales).
+const textoAvisoInvitado = 'Modo invitado: tus cuentos se guardan solo en este dispositivo';
+
+/// Franja del modo invitado. Solo se ve si se entró como invitado.
+class AvisoInvitado extends ConsumerWidget {
+  const AvisoInvitado({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(sesionProvider.select((s) => s.invitado))) return const SizedBox.shrink();
+    return Container(
+      key: const Key('aviso-invitado'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colores.azul.withValues(alpha: 0.12),
+        border: Border.all(color: Colores.azul, width: 2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.phone_android, color: Colores.azul, size: 28),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              textoAvisoInvitado,
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colores.texto),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// El dibujo del niño, enmarcado como una lámina: borde amarillo, sombra y esquinas suaves.
+class LaminaDibujo extends StatelessWidget {
+  const LaminaDibujo({super.key, required this.dibujo});
+
+  final Uint8List dibujo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(Radios.medio),
+          border: Border.all(color: Colores.amarillo, width: 4),
+          boxShadow: sombraSuave(),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(Radios.chico - 2),
+          child: Image.memory(dibujo, height: 120),
+        ),
       ),
     );
   }

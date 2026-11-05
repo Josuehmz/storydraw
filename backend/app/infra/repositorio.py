@@ -33,10 +33,12 @@ class Repositorio:
         return await self.s.get(Tutor, tutor_id)
 
     async def crear_tutor_con_consentimiento(
-        self, email: str, hash_contrasena: str, rol: str, version: str
+        self, email: str, hash_contrasena: str, rol: str, version: str, verificado: bool = False
     ) -> Tutor:
         """Cuenta y consentimiento se escriben en la misma transacción."""
-        tutor = Tutor(email=email.lower(), hash_contrasena=hash_contrasena, rol=rol)
+        tutor = Tutor(
+            email=email.lower(), hash_contrasena=hash_contrasena, rol=rol, verificado=verificado
+        )
         tutor.consentimientos.append(Consentimiento(version=version))
         self.s.add(tutor)
         await self.s.commit()
@@ -134,6 +136,7 @@ class Repositorio:
                     numero=p.numero,
                     texto=p.texto,
                     imagen_clave=p.imagen_clave,
+                    audio_clave=p.audio_clave,
                 )
             )
         for rechazo in r.rechazos:

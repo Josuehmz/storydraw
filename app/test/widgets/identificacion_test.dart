@@ -8,19 +8,6 @@ import 'package:storydraw/presentation/identificacion/pantalla_identificacion.da
 
 import '../ayudantes.dart';
 
-class FlujoFijo extends FlujoCuentoNotifier {
-  FlujoFijo(this.inicial);
-
-  final EstadoFlujo inicial;
-  final creados = <String>[];
-
-  @override
-  EstadoFlujo build() => inicial;
-
-  @override
-  Future<void> crear(String personaje) async => creados.add(personaje);
-}
-
 void main() {
   final dibujo = Uint8List.fromList(pngMinimo);
 
@@ -48,15 +35,22 @@ void main() {
     expect(find.byKey(const Key('etiqueta-confianza')), findsOneWidget);
     expect(find.text('un dragón'), findsOneWidget);
     expect(find.text('81 %'), findsOneWidget);
-    expect(find.text('44 %'), findsOneWidget);
-    // El campo libre está siempre visible, no escondido.
+    // El campo libre está siempre visible; el nombre se pregunta en el paso siguiente.
     expect(find.byKey(const Key('campo-libre')), findsOneWidget);
+    expect(find.byKey(const Key('campo-nombre')), findsNothing);
 
-    await tester.ensureVisible(find.text('un dinosaurio'));
+    await tester.scrollUntilVisible(
+      find.text('un dinosaurio'),
+      100,
+      scrollable: find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)),
+    );
     await tester.pump();
+    expect(find.text('44 %'), findsOneWidget);
     await tester.tap(find.text('un dinosaurio'));
-    await tester.pump();
-    expect(flujo.creados, ['un dinosaurio']);
+    await tester.pumpAndSettle();
+    // Elegir no crea el cuento todavía: sigue la pregunta por el nombre.
+    expect(flujo.creados, isEmpty);
+    expect(find.text('¿Cuál es el nombre de tu dinosaurio?'), findsOneWidget);
   });
 
   testWidgets('lo que escribe el niño manda sobre el modelo', (tester) async {
@@ -82,8 +76,9 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('boton-enviar-libre')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('boton-enviar-libre')));
-    await tester.pump();
-    expect(flujo.creados, ['mi gata Nube']);
+    await tester.pumpAndSettle();
+    expect(flujo.creados, isEmpty);
+    expect(find.text('¿Cuál es el nombre de tu mi gata Nube?'), findsOneWidget);
   });
 
   testWidgets('sin visión, solo queda el campo libre', (tester) async {

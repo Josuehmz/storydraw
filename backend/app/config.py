@@ -44,18 +44,40 @@ class Settings(BaseSettings):
     jwt_secreto: SecretStr = Field(..., min_length=32)
     jwt_minutos: int = 60 * 24
     verificacion_horas: int = 48
+    # false = la cuenta queda confirmada al crearla y se puede entrar sin el correo de
+    # verificación (p. ej. un piloto sin SMTP). El consentimiento sigue siendo obligatorio.
+    verificar_correo: bool = True
+    # Dominios que pueden crear cuenta, separados por coma. Vacío = cualquiera (por defecto:
+    # limitarlo a Gmail y Hotmail es una decisión pendiente; se enciende con gmail.com,hotmail.com).
+    dominios_correo: str = ""
+    # Cómo abre la app el enlace de confirmación (esquema propio + paquete para Chrome)
+    app_esquema: str = "storydraw"
+    app_paquete_android: str = "com.storydraw.storydraw"
     version_consentimiento: str = "2026-10"
     admin_emails: str = ""
     contenido_emails: str = ""
+
+    # Modo invitado: SOLO PRUEBAS LOCALES. Deja generar cuentos sin cuenta ni
+    # consentimiento; el cuento no se guarda en el servidor (la app lo guarda en el
+    # dispositivo). Apagado por defecto y prohibido con ENTORNO=produccion.
+    permitir_invitados: bool = False
+    invitado_minutos: int = Field(120, ge=5, le=24 * 60)
+    # Lo no recogido por la app se descarta pasado este tiempo
+    invitado_retencion_minutos: int = Field(30, ge=1, le=24 * 60)
 
     # Un adaptador por capacidad: cambiar de proveedor es cambiar esta variable
     # (ninguno = el proveedor no tiene esa capacidad y el paso se degrada)
     proveedor_vision: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
     proveedor_texto: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
     # ollama y cloudflare en moderación usan un LLM genérico: SOLO DESARROLLO
-    proveedor_moderacion: Literal["openai", "cloudflare", "ollama", "falso"] = "openai"
+    proveedor_moderacion: Literal["openai", "llamaguard", "cloudflare", "ollama", "falso"] = (
+        "openai"
+    )
     proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
-    proveedor_correo: Literal["smtp", "falso"] = "smtp"
+    # cloudflare = MeloTTS (gratis dentro de las neuronas); ninguno = el cuento sale sin audio
+    proveedor_voz: Literal["cloudflare", "ninguno", "falso"] = "ninguno"
+    # ninguno = no se manda ningún correo (exige VERIFICAR_CORREO=false)
+    proveedor_correo: Literal["smtp", "ninguno", "falso"] = "smtp"
     almacen: Literal["s3", "memoria"] = "s3"
 
     # OpenAI: visión, cuento, moderación e imagen con una sola clave
@@ -74,12 +96,16 @@ class Settings(BaseSettings):
     cloudflare_modelo_vision: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_texto: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_moderacion: str = "@cf/google/gemma-4-26b-a4b-it"
+    # Clasificador para PROVEEDOR_MODERACION=llamaguard (va junto a la revisión infantil)
+    cloudflare_modelo_guardia: str = "@cf/meta/llama-guard-3-8b"
     cloudflare_modelo_imagen: str = "@cf/black-forest-labs/flux-1-schnell"
     cloudflare_pasos_imagen: int = Field(4, ge=1, le=8)
     # Envía chat_template_kwargs.enable_thinking=false (Gemma 4, Qwen 3). Ponlo en false
     # si el modelo de texto elegido no acepta ese campo.
     cloudflare_desactivar_razonamiento: bool = True
-    cloudflare_timeout_s: float = 120.0
+    # Tope por llamada (respuesta completa, cuerpo incluido). Lo normal es 2-18 s; si se
+    # agota, el orquestador reintenta una sola vez y luego falla limpio (o se degrada).
+    cloudflare_timeout_s: float = Field(45.0, gt=0)
     # Tarifa de neuronas y tarifas publicadas de cada modelo (cambian si cambias de modelo)
     cloudflare_usd_por_mil_neuronas: float = 0.011
     cloudflare_neuronas_texto_entrada_mtok: float = 9091.0
@@ -88,6 +114,10 @@ class Settings(BaseSettings):
     cloudflare_neuronas_vision_salida_mtok: float = 27273.0
     cloudflare_neuronas_imagen_tesela: float = 4.80
     cloudflare_neuronas_imagen_paso: float = 9.60
+    # Voz: MeloTTS, español. 18,63 neuronas por minuto de audio (tarifa publicada).
+    cloudflare_modelo_voz: str = "@cf/myshell-ai/melotts"
+    cloudflare_idioma_voz: str = "es"
+    cloudflare_neuronas_voz_minuto: float = 18.63
 
     # Ollama (prueba local, gratis, por CPU): texto, visión y moderación de desarrollo.
     # gemma3:4b ve imágenes, así que un solo modelo cubre las tres capacidades.
@@ -112,6 +142,11 @@ class Settings(BaseSettings):
     s3_access_key: SecretStr | None = None
     s3_secret_key: SecretStr | None = None
     s3_cifrado_sse: bool = True
+    # path = el bucket va en la ruta (MinIO y el gateway S3 de Hugging Face lo exigen)
+    s3_estilo_direccion: Literal["path", "virtual", "auto"] = "path"
+    # when_supported = lo que hace boto3 por defecto (CRC32 en cada petición). El gateway de
+    # Hugging Face no entiende esas sumas: allí va when_required (solo si la operación las pide).
+    s3_checksum: Literal["when_supported", "when_required"] = "when_supported"
 
     # Composición
     recorte: Literal["rembg", "umbral"] = "rembg"
@@ -121,6 +156,9 @@ class Settings(BaseSettings):
     espera_reintento_s: float = Field(0.5, ge=0)
     max_regeneraciones: int = Field(2, ge=0, le=5)
     timeout_proveedor_s: float = 60.0
+    # Tope del cuento entero, para que nunca quede colgado. Vacío = automático: 180 s, o
+    # sin tope si algún paso usa Ollama (por CPU tarda minutos).
+    tiempo_maximo_cuento_s: float | None = Field(None, gt=0)
     max_dibujo_bytes: int = 5_000_000
 
     # Límite de tasa (por IP y por cuenta)
@@ -128,6 +166,7 @@ class Settings(BaseSettings):
     limite_identificar: str = "10/minute"
     limite_cuentos_ip: str = "5/minute"
     limite_cuentos_cuenta: str = "30/day"
+    limite_invitado_ip: str = "3/minute;20/day"
 
     # Tarifas en USD (para el costo por cuento del panel de operación)
     precio_texto_entrada_mtok: float = 0.20
@@ -135,6 +174,7 @@ class Settings(BaseSettings):
     precio_vision_entrada_mtok: float = 0.20
     precio_vision_salida_mtok: float = 1.20
     precio_imagen: float = 0.005
+    precio_voz_mil_caracteres: float = 0.05
 
     @model_validator(mode="after")
     def _validar(self) -> Settings:
@@ -146,6 +186,7 @@ class Settings(BaseSettings):
                     ("PROVEEDOR_TEXTO", self.proveedor_texto),
                     ("PROVEEDOR_MODERACION", self.proveedor_moderacion),
                     ("PROVEEDOR_IMAGEN", self.proveedor_imagen),
+                    ("PROVEEDOR_VOZ", self.proveedor_voz),
                     ("PROVEEDOR_CORREO", self.proveedor_correo),
                 )
                 if valor == "falso"
@@ -154,23 +195,34 @@ class Settings(BaseSettings):
                 raise ValueError(f"En producción no se permiten adaptadores falsos: {falsos}")
             if self.almacen == "memoria":
                 raise ValueError("En producción ALMACEN debe ser s3")
+            if self.permitir_invitados:
+                raise ValueError(
+                    "PERMITIR_INVITADOS es solo para pruebas locales: "
+                    "en producción no se permiten cuentos sin cuenta ni consentimiento"
+                )
             if self.proveedor_moderacion in ("ollama", "cloudflare"):
                 raise ValueError(
                     "La moderación con LLM genérico es solo para desarrollo: "
-                    "en producción usa PROVEEDOR_MODERACION=openai"
+                    "en producción usa PROVEEDOR_MODERACION=openai o llamaguard"
                 )
         proveedores = (
             self.proveedor_vision,
             self.proveedor_texto,
             self.proveedor_moderacion,
             self.proveedor_imagen,
+            self.proveedor_voz,
         )
         if "openai" in proveedores and not self.openai_api_key:
             raise ValueError("Falta OPENAI_API_KEY (o usa PROVEEDOR_*=falso en desarrollo)")
-        if "cloudflare" in proveedores and not (
+        if ("cloudflare" in proveedores or self.proveedor_moderacion == "llamaguard") and not (
             self.cloudflare_account_id and self.cloudflare_api_token
         ):
             raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")
+        if self.proveedor_correo == "ninguno" and self.verificar_correo:
+            raise ValueError(
+                "Con PROVEEDOR_CORREO=ninguno nadie podría confirmar su cuenta: "
+                "pon VERIFICAR_CORREO=false o configura SMTP"
+            )
         if self.proveedor_correo == "smtp" and not (self.smtp_host and self.smtp_remitente):
             raise ValueError("Faltan SMTP_HOST y SMTP_REMITENTE")
         if self.almacen == "s3" and not (self.s3_access_key and self.s3_secret_key):
@@ -180,6 +232,10 @@ class Settings(BaseSettings):
     @staticmethod
     def _lista(valor: str) -> list[str]:
         return [x.strip().lower() for x in valor.split(",") if x.strip()]
+
+    @property
+    def lista_dominios_correo(self) -> list[str]:
+        return [d.lstrip("@") for d in self._lista(self.dominios_correo)]
 
     @property
     def lista_admin(self) -> list[str]:

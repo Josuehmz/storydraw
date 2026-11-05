@@ -21,6 +21,26 @@ void main() {
     expect(find.byKey(const Key('boton-crear')), findsNothing);
   });
 
+  testWidgets('el lienzo vacío muestra la pista y se va con el primer trazo', (tester) async {
+    usarTelefono(tester);
+    await tester.pumpWidget(await montar(const PantallaLienzo()));
+    await tester.pump();
+    expect(find.byKey(const Key('pista-lienzo')), findsOneWidget);
+
+    // La pista no tapa el lienzo: se dibuja justo encima de ella.
+    await tester.dragFrom(
+      tester.getCenter(find.byKey(const Key('pista-lienzo'))),
+      const Offset(80, 40),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('pista-lienzo')), findsNothing);
+    expect(find.byKey(const Key('boton-crear')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('boton-limpiar')));
+    await tester.pump();
+    expect(find.byKey(const Key('pista-lienzo')), findsOneWidget);
+  });
+
   testWidgets('los botones del niño miden al menos 48 dp', (tester) async {
     usarTelefono(tester);
     await tester.pumpWidget(await montar(const PantallaLienzo()));
