@@ -1,8 +1,8 @@
 """Composición de páginas, sin IA externa.
 
-El dibujo del niño no se reinterpreta: se recorta y se monta encima del fondo de cada
-página. Todo ocurre en memoria; el dibujo original nunca se escribe en disco ni en el
-almacén, solo las páginas ya compuestas.
+El dibujo del niño no se reinterpreta: se recorta y se integra en el fondo de cada página
+(contraste, sombra de contacto, luz y textura: ver `armonia`). Todo ocurre en memoria; el
+dibujo original nunca se escribe en disco ni en el almacén, solo las páginas ya compuestas.
 """
 
 from __future__ import annotations
@@ -10,9 +10,23 @@ from __future__ import annotations
 import io
 import logging
 import math
+from dataclasses import dataclass
 
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
+from app.dominio.armonia import (
+    CONTRASTE_MINIMO,
+    Colocacion,
+    PaletaDibujo,
+    ajustar_a_la_luz,
+    analizar,
+    armonizar_fondo,
+    contraste,
+    luz_de_escena,
+    sombra_de_contacto,
+    suavizar_borde,
+    textura_de_lapiz,
+)
 from app.dominio.puertos import IRecortador
 
 log = logging.getLogger(__name__)
@@ -98,35 +112,100 @@ class RecortadorRembg(IRecortador):
             return self._respaldo.recortar(png_blanco)
 
 
+@dataclass(frozen=True)
+class Armonia:
+    """Lo medido al componer una página (va al log; no describe al niño)."""
+
+    contraste_inicial: float
+    contraste_final: float
+
+    @property
+    def corregido(self) -> bool:
+        return self.contraste_final != self.contraste_inicial
+
+
+def _abrir_rgba(png: bytes) -> Image.Image:
+    with Image.open(io.BytesIO(png)) as img:
+        return img.convert("RGBA")
+
+
+def _colocar(dibujo: Image.Image, numero: int) -> tuple[Image.Image, Colocacion]:
+    """Escala el dibujo y lo apoya en el suelo despejado de la parte baja de la página.
+
+    El protagonista ocupa ~55 % de la página y varía un poco de posición entre páginas.
+    """
+    maximo = int(LADO_PAGINA * 0.55)
+    escala = min(maximo / max(dibujo.width, 1), maximo / max(dibujo.height, 1))
+    nuevo = (max(1, int(dibujo.width * escala)), max(1, int(dibujo.height * escala)))
+    dibujo = dibujo.resize(nuevo, Image.LANCZOS)
+    desplazamientos = (-0.18, 0.0, 0.18)
+    dx = int(LADO_PAGINA * desplazamientos[(numero - 1) % 3])
+    x = (LADO_PAGINA - dibujo.width) // 2 + dx
+    y = LADO_PAGINA - dibujo.height - int(LADO_PAGINA * 0.07)
+    return dibujo, Colocacion(x, y, dibujo.width, dibujo.height)
+
+
+def _componer_recortado(base: Image.Image, capa: Image.Image, destino: tuple[int, int]) -> None:
+    """`alpha_composite` que admite que la capa se salga de la página por cualquier lado."""
+    x, y = destino
+    caja = (
+        max(0, -x),
+        max(0, -y),
+        min(capa.width, base.width - x),
+        min(capa.height, base.height - y),
+    )
+    if caja[0] >= caja[2] or caja[1] >= caja[3]:
+        return
+    base.alpha_composite(capa.crop(caja), (x + caja[0], y + caja[1]))
+
+
 class Compositor:
-    def __init__(self, recortador: IRecortador):
+    def __init__(self, recortador: IRecortador, contraste_minimo: float = CONTRASTE_MINIMO):
         self._recortador = recortador
+        self.contraste_minimo = contraste_minimo
 
     def recortar(self, png_blanco: bytes) -> bytes:
         return self._recortador.recortar(png_blanco)
 
+    def paleta(self, recorte_png: bytes) -> PaletaDibujo:
+        """Brillo y tono del dibujo, para pedir un fondo que contraste."""
+        return analizar(_abrir_rgba(recorte_png))
+
+    def contraste(self, fondo_png: bytes, recorte_png: bytes, numero: int) -> float:
+        """Contraste (mediana de ΔE00) entre el dibujo y el fondo donde se colocará."""
+        fondo = _abrir_rgba(fondo_png).resize((LADO_PAGINA, LADO_PAGINA))
+        dibujo, donde = _colocar(_abrir_rgba(recorte_png), numero)
+        return contraste(fondo, dibujo, donde)
+
     def componer(self, fondo_png: bytes, recorte_png: bytes, numero: int) -> bytes:
-        with Image.open(io.BytesIO(fondo_png)) as f:
-            fondo = f.convert("RGBA").resize((LADO_PAGINA, LADO_PAGINA))
-        with Image.open(io.BytesIO(recorte_png)) as r:
-            dibujo = r.convert("RGBA")
-        # El protagonista ocupa ~55 % de la página; varía un poco de posición por página.
-        maximo = int(LADO_PAGINA * 0.55)
-        escala = min(maximo / max(dibujo.width, 1), maximo / max(dibujo.height, 1))
-        nuevo = (max(1, int(dibujo.width * escala)), max(1, int(dibujo.height * escala)))
-        dibujo = dibujo.resize(nuevo, Image.LANCZOS)
-        desplazamientos = (-0.18, 0.0, 0.18)
-        dx = int(LADO_PAGINA * desplazamientos[(numero - 1) % 3])
-        x = (LADO_PAGINA - dibujo.width) // 2 + dx
-        y = LADO_PAGINA - dibujo.height - int(LADO_PAGINA * 0.08)
-        sombra = Image.new("RGBA", fondo.size, (0, 0, 0, 0))
-        alfa = dibujo.getchannel("A").point(lambda v: 90 if v > 0 else 0)
-        sombra.paste((0, 0, 0, 255), (x + 10, y + 12), alfa)
-        fondo.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(8)))
-        fondo.alpha_composite(dibujo, (x, y))
+        return self.componer_armonico(fondo_png, recorte_png, numero)[0]
+
+    def componer_armonico(
+        self, fondo_png: bytes, recorte_png: bytes, numero: int
+    ) -> tuple[bytes, Armonia]:
+        """Monta el dibujo sobre el fondo para que parezca de la misma escena.
+
+        1. Si el dibujo se confunde con la zona del fondo, se corrige esa zona.
+        2. Sombra de contacto bajo la base del dibujo (apoyado, no flotando).
+        3. Ajuste leve del dibujo a la luz de la escena y borde sin halo blanco.
+        4. La misma textura de lápiz y papel por encima de todo.
+        """
+        fondo = _abrir_rgba(fondo_png).resize((LADO_PAGINA, LADO_PAGINA))
+        original = _abrir_rgba(recorte_png)
+        dibujo, donde = _colocar(original, numero)
+        armonizado, inicial, final = armonizar_fondo(
+            fondo, dibujo, donde, analizar(original), self.contraste_minimo
+        )
+        pagina = armonizado.convert("RGBA")
+        luz = luz_de_escena(pagina)
+        sombra, donde_sombra = sombra_de_contacto(dibujo, donde, luz)
+        _componer_recortado(pagina, sombra, donde_sombra)
+        pagina.alpha_composite(suavizar_borde(ajustar_a_la_luz(dibujo, luz)), (donde.x, donde.y))
+        pagina = textura_de_lapiz(pagina)
         salida = io.BytesIO()
-        fondo.convert("RGB").save(salida, format="PNG", optimize=True)
-        return salida.getvalue()
+        # Sin optimize: con la textura tardaba ~4 s por página para ahorrar ~5 % de peso.
+        pagina.save(salida, format="PNG")
+        return salida.getvalue(), Armonia(inicial, final)
 
 
 _PALETAS = (

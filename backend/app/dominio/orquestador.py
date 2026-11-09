@@ -9,6 +9,9 @@ composición monta las páginas y las sube al almacén.
   elementos, emoción), que viajan al paso del cuento para que no invente otros.
 - Sin visión, se usa lo que el niño escribió (o un personaje genérico) y no hay rasgos.
 - Un cuento con menos de 3 páginas no se entrega: cuenta como intento fallido del paso.
+- Los fondos se piden con una paleta que contraste con el dibujo (se lee del recorte antes
+  de pedirlos). Si un fondo queda sin contraste con el dibujo, la composición corrige su luz
+  (ver `armonia`); opcionalmente, antes se pide otro una sola vez y se queda el mejor.
 - Sin imagen, se usa un fondo del banco y el cuento sale con aviso. Si la voz falla, el cuento
   se entrega escrito, con aviso (apagada no avisa). La voz solo lee texto que ya pasó la moderación.
 - Una capacidad apagada (`PROVEEDOR_*=ninguno`) no se llama ni se reintenta.
@@ -29,6 +32,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Literal, TypeVar
 
+from app.dominio.armonia import guia_de_color
 from app.dominio.composicion import Compositor, fondo_del_banco
 from app.dominio.costos import Capacidad, Tarifario
 from app.dominio.moderacion import Moderacion
@@ -165,6 +169,7 @@ class Orquestador:
         max_regeneraciones: int = 2,
         timeout_s: float = 60.0,
         tiempo_maximo_s: float | None = None,
+        regenerar_fondo_sin_contraste: bool = False,
     ):
         self.vision = vision
         self.texto = texto
@@ -180,6 +185,9 @@ class Orquestador:
         self.timeout_s = timeout_s
         # Tope del cuento entero (None = sin tope, p. ej. Ollama por CPU)
         self.tiempo_maximo_s = tiempo_maximo_s
+        # Un fondo que no contrasta con el dibujo se pide otra vez (una sola, por página).
+        # Apagado por defecto: ver REGENERAR_FONDO_SIN_CONTRASTE en la configuración.
+        self.regenerar_fondo_sin_contraste = regenerar_fondo_sin_contraste
 
     # ---------------------------------------------------------------- utilidades
 
@@ -381,9 +389,15 @@ class Orquestador:
         m_narrar = MetricaPaso("narrar", self.voz.proveedor)
         resultado.pasos += [m_escenarios, m_narrar]
 
+        # El recorte (que corre desde el principio) se necesita ya: su paleta guía los fondos.
+        with medir(cuento_id, "espera_recorte"):
+            recorte = await recorte_tarea
+
         async def escenarios_medidos() -> list[bytes]:
             with medir(cuento_id, "escenarios"):
-                return await self._escenarios(m_escenarios, [p.escena for p in paginas], cuento_id)
+                return await self._escenarios(
+                    m_escenarios, [p.escena for p in paginas], cuento_id, recorte
+                )
 
         async def narrar_medido() -> list[bytes | None]:
             with medir(cuento_id, "narrar"):
@@ -398,12 +412,17 @@ class Orquestador:
 
         # Composición y subida al almacén. Las páginas se componen a la vez, cada una en
         # su hilo: Pillow suelta el GIL en lo pesado y el bucle de eventos queda libre.
-        with medir(cuento_id, "espera_recorte"):
-            recorte = await recorte_tarea
-
         def componer_medido(i: int) -> bytes:
             with medir(cuento_id, f"componer_{i}"):
-                return self.compositor.componer(fondos[i - 1], recorte, i)
+                png, armonia = self.compositor.componer_armonico(fondos[i - 1], recorte, i)
+            log.info(
+                "cuento=%s pagina=%d contraste=%.1f contraste_final=%.1f",
+                cuento_id,
+                i,
+                armonia.contraste_inicial,
+                armonia.contraste_final,
+            )
+            return png
 
         with medir(cuento_id, "componer"):
             pngs = await asyncio.gather(
@@ -485,13 +504,66 @@ class Orquestador:
         return True
 
     async def _escenarios(
-        self, metrica: MetricaPaso, escenas: list[str], cuento_id: str = "-"
+        self,
+        metrica: MetricaPaso,
+        escenas: list[str],
+        cuento_id: str = "-",
+        recorte: bytes | None = None,
     ) -> list[bytes]:
         if not self.imagen.disponible:
             # Capacidad apagada: fondo del banco sin llamar ni reintentar.
             metrica.estado = "omitido"
             return [fondo_del_banco(i) for i in range(len(escenas))]
         inicio = time.perf_counter()
+        paleta = None
+        if recorte is not None:
+            paleta = await asyncio.to_thread(self.compositor.paleta, recorte)
+            log.info(
+                "cuento=%s paleta_dibujo=%s luminosidad=%.0f",
+                cuento_id,
+                paleta.familia,
+                paleta.luminosidad,
+            )
+
+        def pedido(escena: str, reforzada: bool = False) -> str:
+            # La escena (hábitat, en inglés) más la paleta que contrasta con el dibujo.
+            if paleta is None:
+                return escena
+            return f"{escena.strip().rstrip('.')}. {guia_de_color(paleta, reforzada)}"
+
+        async def otra_vez(i: int, escena: str, png: bytes) -> bytes:
+            """Si el fondo se come al dibujo, un solo intento más; se queda el mejor."""
+            assert recorte is not None  # noqa: S101 - solo se llama con recorte
+            antes = await asyncio.to_thread(self.compositor.contraste, png, recorte, i + 1)
+            if antes >= self.compositor.contraste_minimo:
+                log.info("cuento=%s fondo=%d contraste=%.1f", cuento_id, i + 1, antes)
+                return png
+            despues = None
+            try:
+                with medir(cuento_id, f"fondo_{i + 1}_otra_vez"):
+                    metrica.intentos += 1
+                    res = await asyncio.wait_for(
+                        self.imagen.generar_fondo(pedido(escena, reforzada=True)),
+                        timeout=self.imagen.timeout_s or self.timeout_s,
+                    )
+                metrica.costo_usd += self.tarifario.costo("imagen", res.uso)
+                despues = await asyncio.to_thread(
+                    self.compositor.contraste, res.png, recorte, i + 1
+                )
+                if despues > antes:
+                    png = res.png
+            except Exception as exc:  # se queda el primero; la composición corrige la zona
+                log.warning(
+                    "cuento=%s fondo=%d otra_vez error=%s", cuento_id, i + 1, type(exc).__name__
+                )
+            log.info(
+                "cuento=%s fondo=%d contraste=%.1f otra_vez=%s",
+                cuento_id,
+                i + 1,
+                antes,
+                "-" if despues is None else f"{despues:.1f}",
+            )
+            return png
 
         async def uno(i: int, escena: str) -> bytes:
             try:
@@ -499,14 +571,16 @@ class Orquestador:
                     res = await self._con_reintentos(
                         metrica,
                         "imagen",
-                        lambda: self.imagen.generar_fondo(escena),
+                        lambda: self.imagen.generar_fondo(pedido(escena)),
                         lambda r: r.uso,
                         self.imagen.timeout_s,
                     )
-                return res.png
             except FalloPaso:
                 metrica.estado = "degradado"
                 return fondo_del_banco(i)
+            if recorte is None or not self.regenerar_fondo_sin_contraste:
+                return res.png
+            return await otra_vez(i, escena, res.png)
 
         fondos = list(await asyncio.gather(*(uno(i, e) for i, e in enumerate(escenas))))
         metrica.latencia_ms = int((time.perf_counter() - inicio) * 1000)  # tiempo de pared

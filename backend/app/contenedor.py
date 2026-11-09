@@ -33,11 +33,14 @@ from app.infra.adaptadores.falsos import (
 from app.infra.adaptadores.moderacion_llama_guard import ModeracionLlamaGuard
 from app.infra.adaptadores.moderacion_llm import ModeracionLLMSoloDesarrollo
 from app.infra.adaptadores.proveedor_cloudflare import (
+    MODELO_VOZ_AURA,
+    MODELO_VOZ_MELOTTS,
     ClienteCloudflare,
     ImagenCloudflare,
     TextoCloudflare,
     VisionCloudflare,
     VozCloudflare,
+    VozCloudflareAura,
 )
 from app.infra.adaptadores.proveedor_ollama import ClienteOllama, TextoOllama, VisionOllama
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
@@ -198,10 +201,17 @@ def construir(settings: Settings) -> Contenedor:
 
     voz: IVoz
     match settings.proveedor_voz:
-        case "cloudflare":
+        case "cloudflare-aura":
+            voz = VozCloudflareAura(
+                cloudflare,
+                settings.cloudflare_modelo_voz or MODELO_VOZ_AURA,
+                settings.cloudflare_voz,
+                settings.cloudflare_neuronas_voz_mil_caracteres,
+            )
+        case "cloudflare-melotts" | "cloudflare":
             voz = VozCloudflare(
                 cloudflare,
-                settings.cloudflare_modelo_voz,
+                settings.cloudflare_modelo_voz or MODELO_VOZ_MELOTTS,
                 settings.cloudflare_idioma_voz,
                 settings.cloudflare_neuronas_voz_minuto,
             )
@@ -254,7 +264,7 @@ def construir(settings: Settings) -> Contenedor:
         imagen=imagen,
         voz=voz,
         moderacion=Moderacion(moderador),
-        compositor=Compositor(recortador),
+        compositor=Compositor(recortador, settings.contraste_minimo_fondo),
         almacen=almacen,
         tarifario=tarifario,
         reintentos=settings.reintentos_por_paso,
@@ -262,6 +272,7 @@ def construir(settings: Settings) -> Contenedor:
         max_regeneraciones=settings.max_regeneraciones,
         timeout_s=settings.timeout_proveedor_s,
         tiempo_maximo_s=_tiempo_maximo_cuento(settings),
+        regenerar_fondo_sin_contraste=settings.regenerar_fondo_sin_contraste,
     )
     motor = crear_motor(settings.database_url)
     return Contenedor(
