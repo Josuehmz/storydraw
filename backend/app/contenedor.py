@@ -45,6 +45,7 @@ from app.infra.adaptadores.proveedor_cloudflare import (
 from app.infra.adaptadores.proveedor_ollama import ClienteOllama, TextoOllama, VisionOllama
 from app.infra.adaptadores.proveedor_openai import ImagenOpenAI, TextoOpenAI, VisionOpenAI
 from app.infra.bd import crear_fabrica, crear_motor
+from app.infra.cupo_voz import CupoVozBD
 from app.infra.seguridad import Hasher, Tokens
 
 
@@ -250,6 +251,8 @@ def construir(settings: Settings) -> Contenedor:
         else AlmacenMemoria()
     )
     recortador = RecortadorRembg() if settings.recorte == "rembg" else RecortadorUmbral()
+    motor = crear_motor(settings.database_url)
+    fabrica = crear_fabrica(motor)
     tarifario = Tarifario(
         texto_entrada_mtok=settings.precio_texto_entrada_mtok,
         texto_salida_mtok=settings.precio_texto_salida_mtok,
@@ -273,12 +276,12 @@ def construir(settings: Settings) -> Contenedor:
         timeout_s=settings.timeout_proveedor_s,
         tiempo_maximo_s=_tiempo_maximo_cuento(settings),
         regenerar_fondo_sin_contraste=settings.regenerar_fondo_sin_contraste,
+        cupo_voz=CupoVozBD(fabrica, settings.voz_cuentos_por_dia),
     )
-    motor = crear_motor(settings.database_url)
     return Contenedor(
         settings=settings,
         motor=motor,
-        fabrica=crear_fabrica(motor),
+        fabrica=fabrica,
         vision=vision,
         texto=texto,
         moderador=moderador,

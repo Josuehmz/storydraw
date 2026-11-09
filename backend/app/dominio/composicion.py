@@ -22,11 +22,13 @@ from app.dominio.armonia import (
     analizar,
     armonizar_fondo,
     contraste,
+    luz_alrededor,
     luz_de_escena,
     sombra_de_contacto,
     suavizar_borde,
     textura_de_lapiz,
 )
+from app.dominio.escena import Ambiente
 from app.dominio.puertos import IRecortador
 
 log = logging.getLogger(__name__)
@@ -129,10 +131,13 @@ def _abrir_rgba(png: bytes) -> Image.Image:
         return img.convert("RGBA")
 
 
-def _colocar(dibujo: Image.Image, numero: int) -> tuple[Image.Image, Colocacion]:
+def _colocar(
+    dibujo: Image.Image, numero: int, aire: bool = False
+) -> tuple[Image.Image, Colocacion]:
     """Escala el dibujo y lo apoya en el suelo despejado de la parte baja de la página.
 
-    El protagonista ocupa ~55 % de la página y varía un poco de posición entre páginas.
+    El protagonista ocupa ~55 % de la página y varía un poco de posición entre páginas. Lo que
+    vuela o nada (`aire`) no se apoya: queda en el centro, un poco más arriba.
     """
     maximo = int(LADO_PAGINA * 0.55)
     escala = min(maximo / max(dibujo.width, 1), maximo / max(dibujo.height, 1))
@@ -141,7 +146,10 @@ def _colocar(dibujo: Image.Image, numero: int) -> tuple[Image.Image, Colocacion]
     desplazamientos = (-0.18, 0.0, 0.18)
     dx = int(LADO_PAGINA * desplazamientos[(numero - 1) % 3])
     x = (LADO_PAGINA - dibujo.width) // 2 + dx
-    y = LADO_PAGINA - dibujo.height - int(LADO_PAGINA * 0.07)
+    if aire:
+        y = max(0, (LADO_PAGINA - dibujo.height) // 2 - int(LADO_PAGINA * 0.05))
+    else:
+        y = LADO_PAGINA - dibujo.height - int(LADO_PAGINA * 0.07)
     return dibujo, Colocacion(x, y, dibujo.width, dibujo.height)
 
 
@@ -171,35 +179,57 @@ class Compositor:
         """Brillo y tono del dibujo, para pedir un fondo que contraste."""
         return analizar(_abrir_rgba(recorte_png))
 
-    def contraste(self, fondo_png: bytes, recorte_png: bytes, numero: int) -> float:
+    def contraste(
+        self, fondo_png: bytes, recorte_png: bytes, numero: int, aire: bool = False
+    ) -> float:
         """Contraste (mediana de ΔE00) entre el dibujo y el fondo donde se colocará."""
         fondo = _abrir_rgba(fondo_png).resize((LADO_PAGINA, LADO_PAGINA))
-        dibujo, donde = _colocar(_abrir_rgba(recorte_png), numero)
+        dibujo, donde = _colocar(_abrir_rgba(recorte_png), numero, aire)
         return contraste(fondo, dibujo, donde)
 
-    def componer(self, fondo_png: bytes, recorte_png: bytes, numero: int) -> bytes:
-        return self.componer_armonico(fondo_png, recorte_png, numero)[0]
+    def componer(
+        self,
+        fondo_png: bytes,
+        recorte_png: bytes,
+        numero: int,
+        ambiente: Ambiente = "dia",
+        aire: bool = False,
+    ) -> bytes:
+        return self.componer_armonico(fondo_png, recorte_png, numero, ambiente, aire)[0]
 
     def componer_armonico(
-        self, fondo_png: bytes, recorte_png: bytes, numero: int
+        self,
+        fondo_png: bytes,
+        recorte_png: bytes,
+        numero: int,
+        ambiente: Ambiente = "dia",
+        aire: bool = False,
     ) -> tuple[bytes, Armonia]:
         """Monta el dibujo sobre el fondo para que parezca de la misma escena.
 
-        1. Si el dibujo se confunde con la zona del fondo, se corrige esa zona.
-        2. Sombra de contacto bajo la base del dibujo (apoyado, no flotando).
-        3. Ajuste leve del dibujo a la luz de la escena y borde sin halo blanco.
-        4. La misma textura de lápiz y papel por encima de todo.
+        1. Un dibujo oscuro de noche, bajo techo o bajo el agua, o lo que vuela o nada si es
+           oscuro, lleva detrás un halo de luz suave del ambiente (farol, luna, sol).
+        2. Si aun así el dibujo se confunde con la zona del fondo, se corrige la luz de esa zona
+           sin cambiar el ambiente (`ambiente`: de noche, solo alrededor del dibujo).
+        3. Sombra de contacto bajo la base del dibujo (apoyado, no flotando), salvo si vuela o
+           nada (`aire`): entonces no hay suelo bajo él.
+        4. Ajuste leve del dibujo a la luz de la escena y borde sin halo blanco.
+        5. La misma textura de lápiz y papel por encima de todo.
         """
         fondo = _abrir_rgba(fondo_png).resize((LADO_PAGINA, LADO_PAGINA))
         original = _abrir_rgba(recorte_png)
-        dibujo, donde = _colocar(original, numero)
+        paleta = analizar(original)
+        dibujo, donde = _colocar(original, numero, aire)
+        if paleta.oscuro and (aire or ambiente in ("noche", "interior", "bajo_agua")):
+            fondo = luz_alrededor(fondo, donde, ambiente, 0.45 if ambiente != "dia" else 0.3)
         armonizado, inicial, final = armonizar_fondo(
-            fondo, dibujo, donde, analizar(original), self.contraste_minimo
+            fondo, dibujo, donde, paleta, self.contraste_minimo, ambiente
         )
         pagina = armonizado.convert("RGBA")
         luz = luz_de_escena(pagina)
-        sombra, donde_sombra = sombra_de_contacto(dibujo, donde, luz)
-        _componer_recortado(pagina, sombra, donde_sombra)
+        if not aire:
+            sombra, donde_sombra = sombra_de_contacto(dibujo, donde, luz)
+            _componer_recortado(pagina, sombra, donde_sombra)
         pagina.alpha_composite(suavizar_borde(ajustar_a_la_luz(dibujo, luz)), (donde.x, donde.y))
         pagina = textura_de_lapiz(pagina)
         salida = io.BytesIO()

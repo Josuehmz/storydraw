@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     # MeloTTS: idioma y 18,63 neuronas por minuto de audio (tarifa publicada)
     cloudflare_idioma_voz: str = "es"
     cloudflare_neuronas_voz_minuto: float = 18.63
+    # Tope de cuentos con voz por día UTC (el cupo gratis de Cloudflare se repone a las 00:00
+    # UTC). Aura-2 cuesta ~2.150 neuronas por cuento de las 10.000 diarias, compartidas con
+    # producción: «Se enciende limitada, se permanece en plan gratuito» (Josue, 2026-11-09).
+    # Pasado el tope, el cuento sale sin voz y sin error. 0 = ningún cuento con voz;
+    # -1 = sin tope (solo con un plan de pago).
+    voz_cuentos_por_dia: int = Field(3, ge=-1)
 
     # Ollama (prueba local, gratis, por CPU): texto, visión y moderación de desarrollo.
     # gemma3:4b ve imágenes, así que un solo modelo cubre las tres capacidades.

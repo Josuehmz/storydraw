@@ -21,6 +21,7 @@ import httpx
 from PIL import Image
 
 from app.dominio.puertos import (
+    CupoAgotado,
     IImagen,
     ITexto,
     IVision,
@@ -52,6 +53,13 @@ URL_BASE = "https://api.cloudflare.com/client/v4/accounts/{cuenta}/ai/run/{model
 
 MODELO_VOZ_AURA = "@cf/deepgram/aura-2-es"
 MODELO_VOZ_MELOTTS = "@cf/myshell-ai/melotts"
+
+
+class CupoAgotadoCloudflare(ErrorProveedor, CupoAgotado):
+    """429 de Workers AI: error del proveedor y, para el orquestador, cupo agotado."""
+
+    def __init__(self, mensaje: str, diario: bool = False):
+        CupoAgotado.__init__(self, mensaje, diario)
 
 
 class ClienteCloudflare:
@@ -91,6 +99,12 @@ class ClienteCloudflare:
         except httpx.TimeoutException as exc:
             # Mismo trato que el tope del orquestador: un reintento y luego falla limpio.
             raise TimeoutError(f"Cloudflare no respondió a tiempo ({modelo})") from exc
+        if respuesta.status_code == 429:
+            # Sin cupo: el diario (10.000 neuronas gratis, vuelve a las 00:00 UTC) o un límite
+            # de ritmo. El orquestador no reintenta y el cuento sigue sin esa capacidad.
+            detalle = _errores(respuesta)
+            diario = any(p in detalle.lower() for p in ("daily", "allocation", "neurons"))
+            raise CupoAgotadoCloudflare(f"Cloudflare 429: {detalle}", diario=diario)
         if respuesta.status_code >= 400:
             raise ErrorProveedor(f"Cloudflare {respuesta.status_code}: {_errores(respuesta)}")
         return respuesta

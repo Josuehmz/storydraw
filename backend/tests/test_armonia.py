@@ -81,7 +81,8 @@ def test_la_guia_pide_colores_que_contrastan_y_suelo_despejado():
     guia = guia_de_color(analizar(_abrir(_recorte(AMARILLO))))
     assert "blue" in guia and "lilac" in guia
     assert "yellow" not in guia  # sin negativos: flux pintaría justo ese color
-    assert "not pale" in guia  # dibujo claro: fondo con algo de profundidad
+    assert "rich, saturated" in guia  # dibujo claro: fondo con algo de profundidad
+    assert "not " not in guia  # todo en positivo: «not pale» le pedía a flux lo pálido
     assert "empty patch of ground in the lower center" in guia
     assert "character" not in guia  # flux lo pintaría
     reforzada = guia_de_color(analizar(_abrir(_recorte(AMARILLO))), reforzada=True)
@@ -208,7 +209,11 @@ def test_el_fondo_se_pide_con_la_paleta_del_dibujo(crear_entorno, caplog):
     with caplog.at_level("INFO"):
         _crear_cuento_con_dibujo(entorno, _dibujo(AMARILLO))
     assert imagen.llamadas == 3  # sin reintentos: ya contrastaba
-    assert all("Background color palette: soft sky blue" in d for d in imagen.descripciones)
+    # Las escenas del cuento falso son «meadow», «river» (de día) y «sunset» (atardecer): la
+    # paleta que contrasta va dentro del ambiente de cada una.
+    dia, _, atardecer = imagen.descripciones
+    assert "Background color palette: soft sky blue" in dia
+    assert "Background color palette: dusky violet" in atardecer
     assert all("empty patch of ground" in d for d in imagen.descripciones)
     assert all("character" not in d for d in imagen.descripciones)
     assert "paleta_dibujo=amarillo" in caplog.text
@@ -222,7 +227,7 @@ def test_un_fondo_sin_contraste_se_pide_otra_vez_una_sola_vez(crear_entorno, cap
     with caplog.at_level("INFO"):
         _crear_cuento_con_dibujo(entorno, _dibujo(AMARILLO))
     assert imagen.llamadas == 6  # 3 páginas x (fondo + otro reforzado)
-    reforzadas = [d for d in imagen.descripciones if "almost entirely in soft sky blue" in d]
+    reforzadas = [d for d in imagen.descripciones if "painted almost entirely in" in d]
     assert len(reforzadas) == 3
     assert "otra_vez=" in caplog.text
 

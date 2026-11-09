@@ -27,6 +27,8 @@ from statistics import median
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
 
+from app.dominio.escena import Ambiente
+
 # Por debajo de esta mediana de ΔE00 el dibujo se confunde con el fondo. Medido el 2026-11-09
 # con seis dibujos de prueba sobre fondos reales de flux: los que se veían mal (pollito
 # amarillo en un trigal, nube clara entre nubes) daban 15-17; a medias, 22-25; los que se
@@ -188,36 +190,107 @@ def analizar(dibujo: Image.Image) -> PaletaDibujo:
 # Paletas de fondo que contrastan con cada familia de color y siguen viéndose naturales en un
 # libro de cuentos (complementarios o vecinos suaves; nunca el mismo tono). Solo en positivo:
 # flux-1-schnell no tiene prompt negativo y nombrar «sin amarillo» le hace pintar amarillo.
-_CONTRASTES = {
-    "rojo": "soft sky blue, cool teal green and pale aqua",
-    "amarillo": "soft sky blue, cool blue-green and pale lilac",
-    "verde": "warm sandy beige, soft peach, dusty lavender and pale blue-grey",
-    "azul": "warm sandy yellow, soft peach, light ochre and pale coral",
-    "morado": "fresh soft green, pale mint and light sandy yellow",
+# Desde la segunda vuelta (2026-11-09) la paleta va *dentro* del ambiente de la escena: de noche
+# se contrasta con azules profundos e índigo, no con pasteles de día.
+_CONTRASTES: dict[Ambiente, dict[str, str]] = {
+    "dia": {
+        "rojo": "soft sky blue, cool teal green and pale aqua",
+        "amarillo": "soft sky blue, cool blue-green and pale lilac",
+        "verde": "warm sandy beige, soft peach, dusty lavender and pale blue-grey",
+        "azul": "warm sandy yellow, soft peach, light ochre and pale coral",
+        "morado": "fresh soft green, pale mint and light sandy yellow",
+    },
+    "atardecer": {
+        "rojo": "dusky violet, soft lavender and deep twilight blue",
+        "amarillo": "dusky violet, soft lavender and deep twilight blue",
+        "verde": "warm peach, rose and soft coral sunset tones",
+        "azul": "warm peach, glowing apricot and rose sunset tones",
+        "morado": "warm golden apricot and soft peach sunset tones",
+    },
+    "noche": {
+        "rojo": "deep midnight blue, dark teal and indigo",
+        "amarillo": "deep midnight blue, indigo and dark violet",
+        "verde": "deep indigo, plum and midnight blue",
+        "azul": "deep plum and dark indigo with warm amber lamplight",
+        "morado": "deep teal, dark blue-green and midnight blue",
+    },
+    "bajo_agua": {
+        "rojo": "turquoise, aqua and teal water with green seaweed",
+        "amarillo": "deep blue and teal water with violet corals",
+        "verde": "deep blue water with pink and violet corals",
+        "azul": "a sunlit sandy seabed with warm coral pink and peach corals",
+        "morado": "turquoise water with yellow-green seaweed and a sandy seabed",
+    },
+    "interior": {
+        "rojo": "soft blue, teal and pale grey-green walls and furniture",
+        "amarillo": "soft blue, lilac and blue-green walls and furniture",
+        "verde": "warm peach, beige and dusty rose walls and furniture",
+        "azul": "warm peach, honey and light ochre walls and furniture",
+        "morado": "soft green, mint and pale yellow walls and furniture",
+    },
+}
+
+# Luz y tonos según el brillo del dibujo, sin salir del ambiente: (oscuro, claro, medio).
+# Un dibujo oscuro de noche se destaca con una zona iluminada detrás, no con un cielo de día.
+_TONOS: dict[Ambiente, tuple[str, str, str]] = {
+    "dia": (
+        "light, airy pastel tones",
+        "medium-deep, rich, saturated tones",
+        "soft, slightly muted tones",
+    ),
+    "atardecer": (
+        "the warm glow of the setting sun lights the lower center",
+        "deep, rich evening tones",
+        "warm, soft evening light",
+    ),
+    "noche": (
+        "a night scene with a dark sky; a warm, softly glowing pool of lamplight and moonlight"
+        " lights up the ground in the lower center",
+        "a night scene with a deep, dark sky and dim, quiet surroundings",
+        "a night scene with a dark sky and soft moonlight",
+    ),
+    "bajo_agua": (
+        "bright sunbeams shine down through clear water in the center",
+        "deep, rich water tones",
+        "soft light rays through the water",
+    ),
+    "interior": (
+        "a warm lamp lights the room around the lower center",
+        "medium-deep, rich, saturated tones",
+        "soft, warm indoor light",
+    ),
 }
 
 
-def guia_de_color(paleta: PaletaDibujo, reforzada: bool = False) -> str:
-    """Fragmento en inglés para el prompt del fondo: paleta que contrasta y suelo despejado.
+def guia_de_color(
+    paleta: PaletaDibujo,
+    reforzada: bool = False,
+    ambiente: Ambiente = "dia",
+    aire: bool = False,
+) -> str:
+    """Fragmento en inglés para el prompt del fondo: paleta que contrasta dentro del ambiente
+    de la escena y el espacio libre donde va el protagonista.
 
-    `reforzada` es para el segundo intento, cuando el primer fondo no contrastó.
+    `reforzada` es para el segundo intento, cuando el primer fondo no contrastó. `aire` = el
+    protagonista vuela o nada: se pide un espacio abierto en el centro en vez de suelo.
     """
     partes = []
-    if paleta.familia in _CONTRASTES:
-        colores = _CONTRASTES[paleta.familia]
+    contrastes = _CONTRASTES[ambiente]
+    if paleta.familia in contrastes:
+        colores = contrastes[paleta.familia]
         partes.append(
             f"The whole background is painted almost entirely in {colores}, including the ground"
             if reforzada
             else f"Background color palette: {colores}"
         )
     # Sin «character» ni «person»: nombrarlos hace que flux pinte uno (y a veces letras).
-    if paleta.oscuro:
-        partes.append("light, airy pastel tones")
-    elif paleta.claro:
-        partes.append("medium-deep, rich tones, not pale or washed out")
+    oscuro, claro, medio = _TONOS[ambiente]
+    partes.append(oscuro if paleta.oscuro else claro if paleta.claro else medio)
+    if aire:
+        hueco = "open water" if ambiente == "bajo_agua" else "open sky"
+        partes.append(f"a wide, open, uncluttered area of {hueco} in the center")
     else:
-        partes.append("soft, slightly muted tones")
-    partes.append("a wide, plain, empty patch of ground in the lower center foreground")
+        partes.append("a wide, plain, empty patch of ground in the lower center foreground")
     return "; ".join(partes) + "."
 
 
@@ -260,10 +333,14 @@ def contraste(fondo: Image.Image, dibujo: Image.Image, donde: Colocacion) -> flo
     return round(median(delta_e(lab(a), lab(b)) for a, b in zip(delante, detras, strict=True)), 1)
 
 
-def _mascara_zona(lado: tuple[int, int], donde: Colocacion) -> Image.Image:
-    """Elipse justa y difuminada alrededor del dibujo: la parte local de la corrección."""
+def _mascara_zona(lado: tuple[int, int], donde: Colocacion, holgura: float = 1.0) -> Image.Image:
+    """Elipse justa y difuminada alrededor del dibujo: la parte local de la corrección.
+
+    `holgura` > 1 la agranda (la luz de un farol se ve como un charco de luz, no un borde).
+    """
     mascara = Image.new("L", lado, 0)
-    margen_x, margen_y = int(donde.ancho * 0.12), int(donde.alto * 0.08)
+    margen_x = int(donde.ancho * 0.12 * holgura + donde.ancho * 0.1 * (holgura - 1))
+    margen_y = int(donde.alto * 0.08 * holgura + donde.alto * 0.1 * (holgura - 1))
     ImageDraw.Draw(mascara).ellipse(
         (
             donde.x - margen_x,
@@ -273,34 +350,66 @@ def _mascara_zona(lado: tuple[int, int], donde: Colocacion) -> Image.Image:
         ),
         fill=255,
     )
-    return mascara.filter(ImageFilter.GaussianBlur(max(16, donde.ancho // 6)))
+    return mascara.filter(ImageFilter.GaussianBlur(max(16, int(donde.ancho * holgura) // 6)))
 
 
-def _tinte_contrario(paleta: PaletaDibujo, claridad: float) -> tuple[int, int, int]:
+def _tinte_contrario(
+    paleta: PaletaDibujo, claridad: float, saturacion: float = 0.35
+) -> tuple[int, int, int]:
     """Color suave del lado opuesto del círculo cromático al del dibujo."""
     if paleta.tono is None:
         tono = 220.0 if paleta.luminosidad >= 55 else 45.0  # gris: sombra fría o luz cálida
     else:
         tono = (paleta.tono + 180) % 360
-    r, g, b = colorsys.hls_to_rgb(tono / 360, claridad, 0.35)
+    r, g, b = colorsys.hls_to_rgb(tono / 360, claridad, saturacion)
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def _version_contrastada(
-    fondo: Image.Image, paleta: PaletaDibujo, intensa: bool = False
-) -> Image.Image:
-    """El mismo fondo con su textura, algo menos saturado y teñido hacia el color contrario.
+# Color de la luz que destaca a un dibujo oscuro, según el ambiente: un farol o la luna de
+# noche, el sol bajo al atardecer, los rayos de sol bajo el agua, una lámpara bajo techo. De día
+# se usa la luz cálida contraria al dibujo (como antes).
+_LUZ_DEL_AMBIENTE: dict[Ambiente, tuple[int, int, int]] = {
+    "noche": (255, 206, 140),
+    "atardecer": (255, 196, 150),
+    "bajo_agua": (170, 230, 255),
+    "interior": (255, 222, 175),
+}
 
-    Dibujo claro (amarillo, blanco, pastel): una sombra fría del color complementario (un
-    pollito amarillo queda sobre un tono lila). Dibujo oscuro: un claro de luz cálida. Se ve
-    como luz de la escena, no como una mancha gris.
+# Qué parte de la corrección va a todo el fondo (el resto, solo alrededor del dibujo). De día
+# un poco, para que no quede una mancha; en los demás ambientes nada: la noche sigue siendo
+# noche, el atardecer conserva su luz y el agua su color. Antes era 0,5 en todos y la página
+# del pollito quedaba pálida y fría.
+_PARTE_GLOBAL: dict[Ambiente, float] = {
+    "dia": 0.25,
+    "interior": 0.1,
+    "atardecer": 0.0,
+    "noche": 0.0,
+    "bajo_agua": 0.0,
+}
+
+
+def _version_contrastada(
+    fondo: Image.Image,
+    paleta: PaletaDibujo,
+    intensa: bool = False,
+    ambiente: Ambiente = "dia",
+) -> Image.Image:
+    """El mismo fondo con su textura, teñido hacia lo que hace resaltar al dibujo.
+
+    Dibujo claro (amarillo, blanco, pastel): una sombra del color complementario (un pollito
+    amarillo queda sobre un tono azulado), sin lavar los colores. Dibujo oscuro: una luz cálida
+    o la del ambiente (farol, luna, sol bajo el agua). Se ve como luz de la escena, no como una
+    mancha gris.
     """
-    rgb = ImageEnhance.Color(fondo.convert("RGB")).enhance(0.4 if intensa else 0.7)
+    rgb = ImageEnhance.Color(fondo.convert("RGB")).enhance(0.6 if intensa else 0.85)
     if paleta.luminosidad >= 55:
-        tinte = _tinte_contrario(paleta, 0.58 if intensa else 0.72)
+        # Saturación 0,5: con 0,35 la sombra alrededor del dibujo se veía como una mancha gris.
+        tinte = _tinte_contrario(paleta, 0.55 if intensa else 0.68, 0.5)
         return ImageChops.multiply(rgb, Image.new("RGB", rgb.size, tinte))
-    tinte = _tinte_contrario(paleta, 0.7 if intensa else 0.55)
-    return ImageChops.screen(rgb, Image.new("RGB", rgb.size, tinte))
+    luz = _LUZ_DEL_AMBIENTE.get(ambiente) or _tinte_contrario(paleta, 0.7 if intensa else 0.55)
+    if ambiente in _LUZ_DEL_AMBIENTE and not intensa:
+        luz = tuple(int(c * 0.75) for c in luz)  # type: ignore[assignment]
+    return ImageChops.screen(rgb, Image.new("RGB", rgb.size, luz))
 
 
 def armonizar_fondo(
@@ -309,27 +418,31 @@ def armonizar_fondo(
     donde: Colocacion,
     paleta: PaletaDibujo,
     minimo: float = CONTRASTE_MINIMO,
+    ambiente: Ambiente = "dia",
 ) -> tuple[Image.Image, float, float]:
     """Corrige lo justo hasta llegar al contraste mínimo, como un cambio de luz de la escena.
 
-    La mitad de la fuerza va a todo el fondo (todo el paisaje toma la misma luz, así no queda
-    una mancha) y la fuerza entera solo alrededor del dibujo. Sube por pasos y se detiene en
-    cuanto alcanza. Devuelve el fondo (el mismo si ya alcanzaba), el contraste inicial y el
-    final.
+    Una parte de la fuerza va a todo el fondo solo de día (así no queda una mancha); en los
+    demás ambientes la corrección es local, alrededor del dibujo, para no cambiar la hora de la
+    escena. Sube por pasos y se detiene en cuanto alcanza. Devuelve el fondo (el mismo si ya
+    alcanzaba), el contraste inicial y el final.
     """
     actual = contraste(fondo, dibujo, donde)
     if actual >= minimo:
         return fondo, actual, actual
     rgb = fondo.convert("RGB")
-    suave = _version_contrastada(rgb, paleta)
-    mascara = _mascara_zona(rgb.size, donde)
+    suave = _version_contrastada(rgb, paleta, ambiente=ambiente)
+    # La luz para un dibujo oscuro se abre más, como el charco de luz de un farol.
+    holgura = 1.6 if paleta.luminosidad < 55 and ambiente != "dia" else 1.0
+    mascara = _mascara_zona(rgb.size, donde, holgura)
+    parte_global = _PARTE_GLOBAL[ambiente]
     mejor, mejor_c = rgb, actual
     # El último paso, más intenso, solo llega cuando el fondo es casi del color del dibujo.
     pasos = [(suave, 0.35), (suave, 0.6), (suave, 0.85), (suave, 1.0)]
-    pasos.append((_version_contrastada(rgb, paleta, intensa=True), 1.0))
+    pasos.append((_version_contrastada(rgb, paleta, intensa=True, ambiente=ambiente), 1.0))
     for contrastado, fuerza in pasos:
         global_y_local = ImageChops.lighter(
-            Image.new("L", rgb.size, int(255 * fuerza * 0.5)),
+            Image.new("L", rgb.size, int(255 * fuerza * parte_global)),
             mascara.point(lambda v, f=fuerza: int(v * f)),
         )
         candidata = Image.composite(contrastado, rgb, global_y_local)
@@ -339,6 +452,23 @@ def armonizar_fondo(
         if c >= minimo:
             break
     return mejor, actual, mejor_c
+
+
+def luz_alrededor(
+    fondo: Image.Image, donde: Colocacion, ambiente: Ambiente, fuerza: float = 0.45
+) -> Image.Image:
+    """Un halo de luz suave detrás del dibujo (farol, luna, rayo de sol), sin tocar el resto.
+
+    Es lo que destaca a un dibujo oscuro de noche o a lo que vuela sin cambiar el ambiente.
+    """
+    color = _LUZ_DEL_AMBIENTE.get(ambiente, (255, 240, 205))
+    rgb = fondo.convert("RGB")
+    iluminado = ImageChops.screen(rgb, Image.new("RGB", rgb.size, color))
+    mascara = _mascara_zona(rgb.size, donde, 1.5).point(lambda v: int(v * fuerza))
+    salida = Image.composite(iluminado, rgb, mascara)
+    if fondo.mode == "RGBA":
+        salida = salida.convert("RGBA")
+    return salida
 
 
 # ---------------------------------------------------------------------------- integración

@@ -12,8 +12,15 @@ composición monta las páginas y las sube al almacén.
 - Los fondos se piden con una paleta que contraste con el dibujo (se lee del recorte antes
   de pedirlos). Si un fondo queda sin contraste con el dibujo, la composición corrige su luz
   (ver `armonia`); opcionalmente, antes se pide otro una sola vez y se queda el mejor.
+- Antes de pedir los fondos se lee el ambiente de cada escena (día, atardecer, noche, bajo el
+  agua, interior) y se cambia el color del lugar que choque con el dibujo (ver `escena`). La
+  paleta y la corrección de luz respetan ese ambiente, y lo que vuela o nada no lleva sombra.
 - Sin imagen, se usa un fondo del banco y el cuento sale con aviso. Si la voz falla, el cuento
   se entrega escrito, con aviso (apagada no avisa). La voz solo lee texto que ya pasó la moderación.
+- La voz tiene un tope de cuentos por día UTC (`ICupoVoz`, plan gratuito de Cloudflare). Pasado
+  el tope, o si el proveedor responde que se acabó el cupo (429), el cuento sale sin voz y sin
+  error: la app no muestra el botón de escuchar. Tras un 429 del cupo diario no se vuelve a
+  llamar a la voz hasta el día UTC siguiente.
 - Una capacidad apagada (`PROVEEDOR_*=ninguno`) no se llama ni se reintenta.
 - Sin cuento o sin moderación aprobada, no hay nada que mostrar: el niño no ve nada.
 - Tiempos: cada llamada tiene un tope (cuerpo de la respuesta incluido); si se agota, se
@@ -30,17 +37,27 @@ import time
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from typing import Literal, TypeVar
 
-from app.dominio.armonia import guia_de_color
+from app.dominio.armonia import PaletaDibujo, guia_de_color
 from app.dominio.composicion import Compositor, fondo_del_banco
 from app.dominio.costos import Capacidad, Tarifario
+from app.dominio.escena import (
+    Ambiente,
+    ambiente_de,
+    en_el_aire,
+    recolorear_escena,
+    recolorear_texto,
+)
 from app.dominio.moderacion import Moderacion
 from app.dominio.puertos import (
     AtributosDibujo,
     CuentoTexto,
+    CupoAgotado,
     Hipotesis,
     IAlmacen,
+    ICupoVoz,
     IImagen,
     ITexto,
     IVision,
@@ -57,6 +74,8 @@ AVISO_SIN_ESCENARIOS = "sin_escenarios"
 AVISO_SIN_NARRACION = "sin_narracion"
 AVISO_SIN_IDENTIFICACION = "sin_identificacion"
 AVISO_TIEMPO_AGOTADO = "tiempo_agotado"
+# Informativo, no es un error: la app no muestra nada (el cuento sale sin botón de escuchar).
+AVISO_VOZ_SIN_CUPO = "voz_sin_cupo"
 
 PAGINAS = 3
 
@@ -99,6 +118,20 @@ class Rechazo:
     origen: Literal["entrada", "cuento"]
     texto: str
     categorias: list[str]
+
+
+@dataclass(frozen=True)
+class PlanPagina:
+    """Lo que se decide de cada página antes de pedir fondo y voz."""
+
+    texto: str  # el que lee el niño (y narra la voz)
+    escena: str  # la descripción visual que va al generador
+    ambiente: Ambiente = "dia"
+    aire: bool = False  # el protagonista vuela o nada: sin sombra ni suelo
+
+
+def hoy_utc() -> date:
+    return datetime.now(UTC).date()
 
 
 @dataclass
@@ -170,6 +203,8 @@ class Orquestador:
         timeout_s: float = 60.0,
         tiempo_maximo_s: float | None = None,
         regenerar_fondo_sin_contraste: bool = False,
+        cupo_voz: ICupoVoz | None = None,
+        reloj: Callable[[], date] = hoy_utc,
     ):
         self.vision = vision
         self.texto = texto
@@ -188,6 +223,11 @@ class Orquestador:
         # Un fondo que no contrasta con el dibujo se pide otra vez (una sola, por página).
         # Apagado por defecto: ver REGENERAR_FONDO_SIN_CONTRASTE en la configuración.
         self.regenerar_fondo_sin_contraste = regenerar_fondo_sin_contraste
+        # Tope de cuentos con voz por día UTC. None = sin tope.
+        self.cupo_voz = cupo_voz
+        self._reloj = reloj
+        # Día UTC en que el proveedor dijo que se acabó su cupo diario: hasta mañana, sin voz.
+        self._voz_agotada_el: date | None = None
 
     # ---------------------------------------------------------------- utilidades
 
@@ -223,6 +263,9 @@ class Orquestador:
                     )
                     # Un tiempo agotado ya costó el tope entero: se reintenta una sola vez
                     # y, si vuelve a agotarse, el paso falla limpio (o se degrada).
+                    # Sin cupo (429) no sirve reintentar: el cupo no vuelve en segundos.
+                    if isinstance(exc, CupoAgotado):
+                        break
                     if isinstance(exc, TimeoutError):
                         tiempos_agotados += 1
                         if tiempos_agotados >= 2:
@@ -389,19 +432,28 @@ class Orquestador:
         m_narrar = MetricaPaso("narrar", self.voz.proveedor)
         resultado.pasos += [m_escenarios, m_narrar]
 
-        # El recorte (que corre desde el principio) se necesita ya: su paleta guía los fondos.
+        # El recorte (que corre desde el principio) se necesita ya: su paleta guía los fondos
+        # y decide qué colores del lugar chocan con el dibujo.
         with medir(cuento_id, "espera_recorte"):
             recorte = await recorte_tarea
+        paleta = await asyncio.to_thread(self.compositor.paleta, recorte)
+        log.info(
+            "cuento=%s paleta_dibujo=%s luminosidad=%.0f",
+            cuento_id,
+            paleta.familia,
+            paleta.luminosidad,
+        )
+        plan = self.planear(cuento_id, personaje, paginas, paleta)
 
         async def escenarios_medidos() -> list[bytes]:
             with medir(cuento_id, "escenarios"):
                 return await self._escenarios(
-                    m_escenarios, [p.escena for p in paginas], cuento_id, recorte
+                    m_escenarios, [p.escena for p in plan], cuento_id, recorte, paleta, plan
                 )
 
         async def narrar_medido() -> list[bytes | None]:
             with medir(cuento_id, "narrar"):
-                return await self.narrar([p.texto for p in paginas], m_narrar)
+                return await self.narrar([p.texto for p in plan], m_narrar, resultado.avisos)
 
         fondos, audios = await asyncio.gather(escenarios_medidos(), narrar_medido())
         if m_escenarios.estado in ("degradado", "omitido"):
@@ -413,8 +465,11 @@ class Orquestador:
         # Composición y subida al almacén. Las páginas se componen a la vez, cada una en
         # su hilo: Pillow suelta el GIL en lo pesado y el bucle de eventos queda libre.
         def componer_medido(i: int) -> bytes:
+            p = plan[i - 1]
             with medir(cuento_id, f"componer_{i}"):
-                png, armonia = self.compositor.componer_armonico(fondos[i - 1], recorte, i)
+                png, armonia = self.compositor.componer_armonico(
+                    fondos[i - 1], recorte, i, p.ambiente, p.aire
+                )
             log.info(
                 "cuento=%s pagina=%d contraste=%.1f contraste_final=%.1f",
                 cuento_id,
@@ -428,7 +483,7 @@ class Orquestador:
             pngs = await asyncio.gather(
                 *(asyncio.to_thread(componer_medido, i) for i in range(1, len(paginas) + 1))
             )
-        for i, (pagina, png) in enumerate(zip(paginas, pngs, strict=True), start=1):
+        for i, (pagina, png) in enumerate(zip(plan, pngs, strict=True), start=1):
             clave = clave_imagen(cuento_id, i)
             with medir(cuento_id, f"guardar_{i}"):
                 await self.almacen.guardar(clave, png, "image/png")
@@ -439,18 +494,82 @@ class Orquestador:
             resultado.paginas.append(PaginaFinal(i, pagina.texto.strip(), clave, audio_clave))
         resultado.estado = "listo"
 
+    def planear(
+        self,
+        cuento_id: str,
+        personaje: str,
+        paginas: list,
+        paleta: PaletaDibujo,
+    ) -> list[PlanPagina]:
+        """Ambiente de cada escena, color del lugar que no choque con el dibujo y si vuela.
+
+        El texto del niño solo cambia si nombra con ese mismo color un lugar («el trigal
+        dorado»); la escena visual cambia siempre que choque. Al log van solo los colores.
+        """
+        plan = []
+        for i, pagina in enumerate(paginas, start=1):
+            ambiente = ambiente_de(pagina.escena, pagina.texto)
+            escena, cambios_escena = recolorear_escena(pagina.escena, paleta.familia)
+            texto, cambios_texto = recolorear_texto(pagina.texto, paleta.familia)
+            aire = en_el_aire(personaje, ambiente)
+            log.info(
+                "cuento=%s pagina=%d ambiente=%s aire=%s color_escena=%s color_texto=%s",
+                cuento_id,
+                i,
+                ambiente,
+                aire,
+                ",".join(f"{a}>{b}" for a, b in cambios_escena) or "-",
+                ",".join(f"{a}>{b}" for a, b in cambios_texto) or "-",
+            )
+            plan.append(PlanPagina(texto, escena, ambiente, aire))
+        return plan
+
+    async def _hay_cupo_de_voz(self) -> bool:
+        """Reserva el cupo de voz de este cuento. Sin tope configurado, siempre hay."""
+        if self._voz_agotada_el is not None:
+            if self._voz_agotada_el == self._reloj():
+                return False
+            self._voz_agotada_el = None  # nuevo día UTC: el proveedor ya repuso su cupo
+        if self.cupo_voz is None:
+            return True
+        try:
+            return await self.cupo_voz.reservar()
+        except Exception as exc:  # sin base de datos no se sabe: se protege el cupo
+            log.warning("cupo_voz no disponible error=%s", type(exc).__name__)
+            return False
+
     async def narrar(
-        self, textos: list[str], metrica: MetricaPaso | None = None
+        self,
+        textos: list[str],
+        metrica: MetricaPaso | None = None,
+        avisos: list[str] | None = None,
     ) -> list[bytes | None]:
-        """Paso 5: un audio por página. Si una falla, esa página queda sin audio."""
+        """Paso 5: un audio por página. Si una falla, esa página queda sin audio.
+
+        Sin cupo de voz (el tope del día o un 429 del proveedor), el cuento entero sale sin
+        voz: sin error y con el aviso informativo `voz_sin_cupo`, que la app no muestra.
+        """
         metrica = metrica or MetricaPaso("narrar", self.voz.proveedor)
+        sin_voz: list[bytes | None] = [None] * len(textos)
         if not self.voz.disponible:
             # Capacidad apagada: cuento escrito, sin llamar ni reintentar.
             metrica.estado = "omitido"
-            return [None] * len(textos)
+            return sin_voz
+
+        def sin_cupo() -> list[bytes | None]:
+            metrica.estado = "omitido"
+            if avisos is not None and AVISO_VOZ_SIN_CUPO not in avisos:
+                avisos.append(AVISO_VOZ_SIN_CUPO)
+            return sin_voz
+
+        if not await self._hay_cupo_de_voz():
+            log.info("narrar sin_cupo: el cuento sale sin voz")
+            return sin_cupo()
         inicio = time.perf_counter()
+        cupo_del_proveedor = False
 
         async def uno(texto: str) -> bytes | None:
+            nonlocal cupo_del_proveedor
             try:
                 res = await self._con_reintentos(
                     metrica,
@@ -460,12 +579,26 @@ class Orquestador:
                     self.voz.timeout_s,
                 )
                 return res.mp3
-            except FalloPaso:
+            except FalloPaso as fallo:
+                if isinstance(fallo.causa, CupoAgotado):
+                    cupo_del_proveedor = True
+                    if fallo.causa.diario:
+                        self._voz_agotada_el = self._reloj()
                 metrica.estado = "degradado"
                 return None
 
         audios = list(await asyncio.gather(*(uno(t) for t in textos)))
         metrica.latencia_ms = int((time.perf_counter() - inicio) * 1000)  # tiempo de pared
+        if not any(audios) and self.cupo_voz is not None:
+            # No salió ningún audio: este cuento no gastó el cupo del día.
+            try:
+                await self.cupo_voz.liberar()
+            except Exception as exc:
+                log.warning("cupo_voz no se pudo liberar error=%s", type(exc).__name__)
+        if cupo_del_proveedor:
+            # Un cuento narrado a medias confunde: o todas las páginas tienen voz o ninguna.
+            log.warning("narrar proveedor_sin_cupo: el cuento sale sin voz")
+            return sin_cupo()
         return audios
 
     async def _escribir_completo(self, solicitud: SolicitudCuento) -> CuentoTexto:
@@ -509,32 +642,31 @@ class Orquestador:
         escenas: list[str],
         cuento_id: str = "-",
         recorte: bytes | None = None,
+        paleta: PaletaDibujo | None = None,
+        plan: list[PlanPagina] | None = None,
     ) -> list[bytes]:
         if not self.imagen.disponible:
             # Capacidad apagada: fondo del banco sin llamar ni reintentar.
             metrica.estado = "omitido"
             return [fondo_del_banco(i) for i in range(len(escenas))]
         inicio = time.perf_counter()
-        paleta = None
-        if recorte is not None:
+        if paleta is None and recorte is not None:
             paleta = await asyncio.to_thread(self.compositor.paleta, recorte)
-            log.info(
-                "cuento=%s paleta_dibujo=%s luminosidad=%.0f",
-                cuento_id,
-                paleta.familia,
-                paleta.luminosidad,
-            )
+        planes = plan or [PlanPagina("", e, ambiente_de(e)) for e in escenas]
 
-        def pedido(escena: str, reforzada: bool = False) -> str:
-            # La escena (hábitat, en inglés) más la paleta que contrasta con el dibujo.
+        def pedido(i: int, escena: str, reforzada: bool = False) -> str:
+            # La escena (hábitat, en inglés) más la paleta que contrasta con el dibujo dentro
+            # del ambiente de la escena.
             if paleta is None:
                 return escena
-            return f"{escena.strip().rstrip('.')}. {guia_de_color(paleta, reforzada)}"
+            guia = guia_de_color(paleta, reforzada, planes[i].ambiente, planes[i].aire)
+            return f"{escena.strip().rstrip('.')}. {guia}"
 
         async def otra_vez(i: int, escena: str, png: bytes) -> bytes:
             """Si el fondo se come al dibujo, un solo intento más; se queda el mejor."""
             assert recorte is not None  # noqa: S101 - solo se llama con recorte
-            antes = await asyncio.to_thread(self.compositor.contraste, png, recorte, i + 1)
+            aire = planes[i].aire
+            antes = await asyncio.to_thread(self.compositor.contraste, png, recorte, i + 1, aire)
             if antes >= self.compositor.contraste_minimo:
                 log.info("cuento=%s fondo=%d contraste=%.1f", cuento_id, i + 1, antes)
                 return png
@@ -543,12 +675,12 @@ class Orquestador:
                 with medir(cuento_id, f"fondo_{i + 1}_otra_vez"):
                     metrica.intentos += 1
                     res = await asyncio.wait_for(
-                        self.imagen.generar_fondo(pedido(escena, reforzada=True)),
+                        self.imagen.generar_fondo(pedido(i, escena, reforzada=True)),
                         timeout=self.imagen.timeout_s or self.timeout_s,
                     )
                 metrica.costo_usd += self.tarifario.costo("imagen", res.uso)
                 despues = await asyncio.to_thread(
-                    self.compositor.contraste, res.png, recorte, i + 1
+                    self.compositor.contraste, res.png, recorte, i + 1, aire
                 )
                 if despues > antes:
                     png = res.png
@@ -571,7 +703,7 @@ class Orquestador:
                     res = await self._con_reintentos(
                         metrica,
                         "imagen",
-                        lambda: self.imagen.generar_fondo(pedido(escena)),
+                        lambda: self.imagen.generar_fondo(pedido(i, escena)),
                         lambda r: r.uso,
                         self.imagen.timeout_s,
                     )
