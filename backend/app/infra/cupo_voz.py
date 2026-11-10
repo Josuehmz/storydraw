@@ -2,8 +2,10 @@
 
 La voz Aura-2 cuesta unas 2.150 neuronas por cuento y el plan gratuito de Cloudflare da 10.000
 al día (compartidas con producción), así que la voz se enciende limitada: «Se enciende limitada,
-se permanece en plan gratuito» (Josue, 2026-11-09). El día es UTC porque el cupo de Cloudflare
-se repone a las 00:00 UTC (19:00 en Colombia).
+se permanece en plan gratuito» (Josue, 2026-11-09). El día es UTC porque Cloudflare documenta
+que su cupo se repone a las 00:00 UTC (19:00 en Colombia). En la práctica puede tardar más (el
+2026-11-10 seguía agotado pasadas las 00:25 UTC); para eso está la reserva ante el 429 del
+orquestador, que corta la voz sin romper el cuento.
 
 La reserva es una sola sentencia atómica (`INSERT ... ON CONFLICT DO UPDATE ... WHERE usados <
 tope RETURNING`): dos cuentos a la vez no pueden pasarse del tope, ni en PostgreSQL (bloquea la
