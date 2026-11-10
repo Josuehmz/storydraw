@@ -122,7 +122,9 @@ def test_prompt_fondo_estilo_lapices_de_colores():
     assert "colored pencil" in prompt.lower() and "crayon" in prompt.lower()
     assert "not photorealistic" in prompt and "not 3D" in prompt
     assert "Scene: a quiet river in a forest." in prompt
-    assert "no people" in prompt and "no animals" in prompt and "no text" in prompt
+    assert "no people" in prompt and "no animals" in prompt
+    # Letras: se piden en positivo (ilustración sin palabras), no con «no text».
+    assert "Wordless picture-book illustration" in prompt and "no text" not in prompt
 
 
 def test_regla_de_escenas_ambiente_segun_el_dibujo_y_estilo_coherente():

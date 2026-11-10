@@ -186,3 +186,28 @@ class IVoz(ABC):
     @abstractmethod
     async def narrar(self, texto: str) -> ResultadoAudio:
         """Sintetiza la narración de una página en español latino (MP3)."""
+
+
+class CupoAgotado(RuntimeError):
+    """El proveedor respondió que no queda cupo (HTTP 429). No se reintenta.
+
+    `diario` = es el cupo del día (p. ej. las 10.000 neuronas gratis de Cloudflare), que solo
+    vuelve a las 00:00 UTC; si no, es un límite de ritmo de corta duración.
+    """
+
+    def __init__(self, mensaje: str = "sin cupo", diario: bool = False):
+        super().__init__(mensaje)
+        self.diario = diario
+
+
+class ICupoVoz(ABC):
+    """Tope de cuentos con voz por día UTC (plan gratuito). Debe ser atómico: dos cuentos a la
+    vez no pueden pasarse del tope."""
+
+    @abstractmethod
+    async def reservar(self) -> bool:
+        """Cuenta un cuento con voz hoy si queda cupo. False = hoy ya no hay voz."""
+
+    @abstractmethod
+    async def liberar(self) -> None:
+        """Devuelve la reserva de hoy (el cuento no llegó a tener ningún audio)."""

@@ -6,12 +6,13 @@ El dibujo del niño no tiene tabla: nunca se persiste. Lo que queda es el cuento
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -126,6 +127,18 @@ class Pagina(Base):
     audio_clave: Mapped[str | None] = mapped_column(String(255))
 
     cuento: Mapped[Cuento] = relationship(back_populates="paginas")
+
+
+class CupoVoz(Base):
+    """Cuentos con voz de cada día UTC: el tope del plan gratuito (`VOZ_CUENTOS_POR_DIA`).
+
+    Una fila por día; no guarda nada del niño ni del cuento.
+    """
+
+    __tablename__ = "cupos_voz"
+
+    dia: Mapped[date] = mapped_column(Date, primary_key=True)
+    usados: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class RegistroModeracion(Base):

@@ -1,4 +1,4 @@
-"""Adaptadores de Cloudflare Workers AI (REST): visión, texto e imagen.
+"""Adaptadores de Cloudflare Workers AI (REST): visión, texto, imagen y voz.
 
 `POST https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{modelo}`
 con `Authorization: Bearer {CLOUDFLARE_API_TOKEN}`. La respuesta viene envuelta en
@@ -21,6 +21,7 @@ import httpx
 from PIL import Image
 
 from app.dominio.puertos import (
+    CupoAgotado,
     IImagen,
     ITexto,
     IVision,
@@ -31,7 +32,7 @@ from app.dominio.puertos import (
     SolicitudCuento,
     Uso,
 )
-from app.infra.adaptadores.audio import es_wav, wav_a_mp3
+from app.infra.adaptadores.audio import es_wav, segundos_mp3, texto_para_narrar, wav_a_mp3
 from app.infra.adaptadores.comun import (
     ESQUEMA_CUENTO,
     ESQUEMA_VISION,
@@ -49,6 +50,16 @@ from app.infra.adaptadores.comun import (
 CARACTERES_POR_SEGUNDO = 15
 
 URL_BASE = "https://api.cloudflare.com/client/v4/accounts/{cuenta}/ai/run/{modelo}"
+
+MODELO_VOZ_AURA = "@cf/deepgram/aura-2-es"
+MODELO_VOZ_MELOTTS = "@cf/myshell-ai/melotts"
+
+
+class CupoAgotadoCloudflare(ErrorProveedor, CupoAgotado):
+    """429 de Workers AI: error del proveedor y, para el orquestador, cupo agotado."""
+
+    def __init__(self, mensaje: str, diario: bool = False):
+        CupoAgotado.__init__(self, mensaje, diario)
 
 
 class ClienteCloudflare:
@@ -88,6 +99,12 @@ class ClienteCloudflare:
         except httpx.TimeoutException as exc:
             # Mismo trato que el tope del orquestador: un reintento y luego falla limpio.
             raise TimeoutError(f"Cloudflare no respondió a tiempo ({modelo})") from exc
+        if respuesta.status_code == 429:
+            # Sin cupo: el diario (10.000 neuronas gratis, vuelve a las 00:00 UTC) o un límite
+            # de ritmo. El orquestador no reintenta y el cuento sigue sin esa capacidad.
+            detalle = _errores(respuesta)
+            diario = any(p in detalle.lower() for p in ("daily", "allocation", "neurons"))
+            raise CupoAgotadoCloudflare(f"Cloudflare 429: {detalle}", diario=diario)
         if respuesta.status_code >= 400:
             raise ErrorProveedor(f"Cloudflare {respuesta.status_code}: {_errores(respuesta)}")
         return respuesta
@@ -285,6 +302,7 @@ class VozCloudflare(IVoz):
         self.timeout_s = cliente.timeout_s
 
     async def narrar(self, texto: str) -> ResultadoAudio:
+        texto = texto_para_narrar(texto)
         resultado = await self._cliente.run_json(
             self._modelo, {"prompt": texto, "lang": self._idioma}
         )
@@ -299,3 +317,62 @@ class VozCloudflare(IVoz):
         neuronas = segundos / 60 * self._neuronas_minuto
         uso = Uso(caracteres=len(texto), neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
         return ResultadoAudio(mp3, uso)
+
+
+class VozCloudflareAura(IVoz):
+    """Deepgram Aura-2 en español (`@cf/deepgram/aura-2-es`), voz «javier» por defecto.
+
+    `{"text", "speaker", "encoding": "mp3"}` -> el MP3 crudo (`audio/mpeg`, mono, 24 kHz,
+    48 kbps): ya es ligero y se entrega tal cual, porque recodificarlo solo perdería calidad.
+    Aura-2 pone el ritmo y la entonación según el texto, así que se le pasa limpio y bien
+    puntuado (`texto_para_narrar`).
+
+    Se cobra por carácter (US$0,03 por 1.000). Cloudflare informa las neuronas reales en la
+    cabecera `cf-ai-neurons`; si no viene, se estiman con la tarifa.
+    """
+
+    proveedor = "cloudflare"
+
+    def __init__(
+        self,
+        cliente: ClienteCloudflare,
+        modelo: str,
+        voz: str,
+        neuronas_mil_caracteres: float,
+    ):
+        self._cliente = cliente
+        self._modelo = modelo
+        self._voz = voz
+        self._neuronas_mil_caracteres = neuronas_mil_caracteres
+        self.timeout_s = cliente.timeout_s
+
+    async def narrar(self, texto: str) -> ResultadoAudio:
+        texto = texto_para_narrar(texto)
+        if not texto:
+            raise ErrorProveedor("no hay texto que narrar")
+        respuesta = await self._cliente.run(
+            self._modelo, {"text": texto, "speaker": self._voz, "encoding": "mp3"}
+        )
+        tipo = respuesta.headers.get("content-type", "")
+        if "json" in tipo:
+            # Por si la API REST algún día lo envuelve como MeloTTS: {"result": {"audio": b64}}
+            try:
+                sobre = respuesta.json()
+            except ValueError as exc:
+                raise ErrorProveedor("Cloudflare devolvió una respuesta que no es JSON") from exc
+            resultado = sobre.get("result") if isinstance(sobre, dict) else None
+            mp3 = _b64((resultado or {}).get("audio"), "el audio")
+        else:
+            mp3 = respuesta.content
+        if not mp3 or segundos_mp3(mp3) <= 0:
+            raise ErrorProveedor("Cloudflare devolvió un audio vacío o que no es MP3")
+        neuronas = _neuronas_de(respuesta) or (len(texto) / 1000 * self._neuronas_mil_caracteres)
+        uso = Uso(caracteres=len(texto), neuronas=neuronas, costo_usd=self._cliente.a_usd(neuronas))
+        return ResultadoAudio(mp3, uso)
+
+
+def _neuronas_de(respuesta: httpx.Response) -> float:
+    try:
+        return max(0.0, float(respuesta.headers.get("cf-ai-neurons", "")))
+    except ValueError:
+        return 0.0

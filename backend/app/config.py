@@ -74,8 +74,11 @@ class Settings(BaseSettings):
         "openai"
     )
     proveedor_imagen: Literal["openai", "cloudflare", "ninguno", "falso"] = "openai"
-    # cloudflare = MeloTTS (gratis dentro de las neuronas); ninguno = el cuento sale sin audio
-    proveedor_voz: Literal["cloudflare", "ninguno", "falso"] = "ninguno"
+    # cloudflare-aura = Deepgram Aura-2 (voz «javier», elegida por Josue el 2026-11-09);
+    # cloudflare-melotts (o cloudflare, el nombre de antes) = MeloTTS; ninguno = sin audio
+    proveedor_voz: Literal[
+        "cloudflare-aura", "cloudflare-melotts", "cloudflare", "ninguno", "falso"
+    ] = "ninguno"
     # ninguno = no se manda ningún correo (exige VERIFICAR_CORREO=false)
     proveedor_correo: Literal["smtp", "ninguno", "falso"] = "smtp"
     almacen: Literal["s3", "memoria"] = "s3"
@@ -114,10 +117,24 @@ class Settings(BaseSettings):
     cloudflare_neuronas_vision_salida_mtok: float = 27273.0
     cloudflare_neuronas_imagen_tesela: float = 4.80
     cloudflare_neuronas_imagen_paso: float = 9.60
-    # Voz: MeloTTS, español. 18,63 neuronas por minuto de audio (tarifa publicada).
-    cloudflare_modelo_voz: str = "@cf/myshell-ai/melotts"
+    # Voz. Vacío = el modelo del proveedor elegido: @cf/deepgram/aura-2-es (cloudflare-aura)
+    # o @cf/myshell-ai/melotts (cloudflare-melotts).
+    cloudflare_modelo_voz: str = ""
+    # Hablante de Aura-2 (javier, alvaro, nestor, sirio, aquila...): javier = masculina cálida
+    cloudflare_voz: str = "javier"
+    # Aura-2 cobra por carácter: US$0,03 por 1.000 = 2.727 neuronas (a 0,011 USD las 1.000)
+    cloudflare_neuronas_voz_mil_caracteres: float = 2727.27
+    # MeloTTS: idioma y 18,63 neuronas por minuto de audio (tarifa publicada)
     cloudflare_idioma_voz: str = "es"
     cloudflare_neuronas_voz_minuto: float = 18.63
+    # Tope de cuentos con voz por día UTC (Cloudflare documenta que su cupo gratis se repone a
+    # las 00:00 UTC; el 2026-11-10 seguía en 429 pasadas las 00:25 UTC, y hay reportes de una
+    # ventana móvil de ~24 h: por eso también se corta la voz ante un 429). Aura-2 cuesta
+    # ~2.150 neuronas por cuento de las 10.000 diarias, compartidas con
+    # producción: «Se enciende limitada, se permanece en plan gratuito» (Josue, 2026-11-09).
+    # Pasado el tope, el cuento sale sin voz y sin error. 0 = ningún cuento con voz;
+    # -1 = sin tope (solo con un plan de pago).
+    voz_cuentos_por_dia: int = Field(3, ge=-1)
 
     # Ollama (prueba local, gratis, por CPU): texto, visión y moderación de desarrollo.
     # gemma3:4b ve imágenes, así que un solo modelo cubre las tres capacidades.
@@ -150,6 +167,13 @@ class Settings(BaseSettings):
 
     # Composición
     recorte: Literal["rembg", "umbral"] = "rembg"
+    # Contraste mínimo dibujo/fondo (mediana de ΔE00): por debajo, el dibujo se confunde con
+    # el fondo y la composición corrige la luz del fondo. 30 sale de lo medido el 2026-11-09.
+    contraste_minimo_fondo: float = Field(30.0, ge=0, le=100)
+    # true = antes de corregir, pide otro fondo (una vez por página). Apagado: en lo medido
+    # el 2026-11-09 el segundo fondo casi nunca alcanzaba el mínimo (1 de 8) y sumaba ~5 s
+    # y 57,6 neuronas por página; la corrección de luz sí llega siempre.
+    regenerar_fondo_sin_contraste: bool = False
 
     # Orquestador
     reintentos_por_paso: int = Field(2, ge=0, le=5)
@@ -214,7 +238,8 @@ class Settings(BaseSettings):
         )
         if "openai" in proveedores and not self.openai_api_key:
             raise ValueError("Falta OPENAI_API_KEY (o usa PROVEEDOR_*=falso en desarrollo)")
-        if ("cloudflare" in proveedores or self.proveedor_moderacion == "llamaguard") and not (
+        usa_cloudflare = any(p.startswith("cloudflare") for p in proveedores)
+        if (usa_cloudflare or self.proveedor_moderacion == "llamaguard") and not (
             self.cloudflare_account_id and self.cloudflare_api_token
         ):
             raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")

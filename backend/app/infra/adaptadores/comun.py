@@ -146,7 +146,12 @@ PROMPT_CUENTO = (
     "ninguno, elige el entorno que mejor le quede. Además, la escena de cada página debe "
     "mostrar lo que cuenta el texto de esa página (nubes, un río, un libro sobre una "
     "roca, la luna, lluvia). Mantén el mismo lugar y la misma paleta de colores entre "
-    "páginas para que el estilo sea coherente.\n"
+    "páginas para que el estilo sea coherente. Di siempre en la escena la hora y la luz "
+    "(«on a sunny day», «at sunset», «at night under the moon», «underwater», «inside a "
+    "cozy room»). Deja abajo, en el centro, un suelo o "
+    "espacio despejado donde se para el protagonista, y pinta el lugar con colores que "
+    "contrasten con los del protagonista para que se vea bien; nómbralos en positivo "
+    "(«soft blue sky, pale green meadow») y no nombres los colores del protagonista.\n"
     "6. {rasgos}\n"
     "7. {nombre}"
 )
@@ -191,13 +196,28 @@ PROMPT_MODERACION = (
 
 def prompt_fondo(descripcion: str) -> str:
     """Prompt de fondo para cualquier proveedor de imagen: estilo lápices de colores y
-    crayón de libro de cuentos (elegido por Josue el 2026-10-22), sin fotorrealismo."""
+    crayón de libro de cuentos (elegido por Josue el 2026-10-22), sin fotorrealismo.
+
+    La descripción trae la escena y, desde el 2026-11-09, la paleta que contrasta con el
+    dibujo y el suelo despejado donde va el protagonista (`armonia.guia_de_color`). Por eso
+    aquí los colores son «alegres», no «brillantes»: el que debe resaltar es el dibujo.
+    """
     return (
         "Colored pencil and crayon illustration from a children's storybook, hand-drawn "
-        "outlines, simple shapes, bright cheerful colors, grainy paper texture, flat 2D "
+        "outlines, simple shapes, cheerful colors, grainy paper texture, flat 2D "
         "naive style like a picture book, not photorealistic, not 3D. "
-        f"Scene: {descripcion}. No characters, no people, no animals, no text, no letters."
+        f"Scene: {descripcion.strip().rstrip('.')}. {CIERRE_FONDO}"
     )
+
+
+# Cierre del prompt del fondo. Flux-1-schnell no tiene prompt negativo y nombrar algo tiende a
+# pintarlo: «no text, no letters» dejaba letras sueltas («FAR.»). Desde el 2026-11-09 se pide en
+# positivo una ilustración sin palabras con superficies lisas (medido en la segunda vuelta).
+CIERRE_FONDO = (
+    "Wordless picture-book illustration with blank, unmarked surfaces; "
+    "no characters, no people, no animals."
+)
+CIERRE_FONDO_ANTERIOR = "No characters, no people, no animals, no text, no letters."
 
 
 def mensaje_cuento(
