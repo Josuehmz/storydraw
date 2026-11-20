@@ -36,6 +36,7 @@ from app.infra.adaptadores.proveedor_cloudflare import (
     MODELO_VOZ_AURA,
     MODELO_VOZ_MELOTTS,
     ClienteCloudflare,
+    CuentaCloudflare,
     ImagenCloudflare,
     TextoCloudflare,
     VisionCloudflare,
@@ -113,6 +114,11 @@ def construir(settings: Settings) -> Contenedor:
             settings.cloudflare_neuronas_texto_salida_mtok,
         ),
         settings.cloudflare_desactivar_razonamiento,
+        # Si la cuenta 1 se queda sin cupo diario, sigue la 2 (y así), sin que se note
+        cuentas_extra=[
+            CuentaCloudflare(cuenta, _secreto(token))
+            for cuenta, token in settings.cuentas_cloudflare_extra
+        ],
     )
     ollama = ClienteOllama(http, settings.ollama_url, settings.ollama_timeout_s)
 
