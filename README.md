@@ -139,6 +139,7 @@ Qué esperar: el cuento sale con fondos del banco (aviso `sin_escenarios`) y sin
 
 1. En el panel de Cloudflare, copia el Account ID y crea un token de API con permiso **Workers AI**.
 2. En el `.env` del servidor (nunca en el código): `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` y `PROVEEDOR_VISION=cloudflare`, `PROVEEDOR_TEXTO=cloudflare`, `PROVEEDOR_IMAGEN=cloudflare`.
+   Opcional: más cuentas con `CLOUDFLARE_ACCOUNT_ID_2` y `CLOUDFLARE_API_TOKEN_2` (hasta la `_5`). Cuando una cuenta responde 429 por el cupo diario de neuronas, el backend la aparta hasta las 00:00 UTC (si a esa hora sigue sin cupo, la reprueba cada 30 min) y repite la misma llamada con la siguiente; ante un 429 de ritmo la aparta un minuto (o lo que diga `Retry-After`). Si no queda ninguna, el cuento se degrada como siempre. No se ve en la app ni en el panel; solo en el log del backend («cuenta 2 de 2»). `VOZ_CUENTOS_POR_DIA` sigue siendo un tope de la app, no por cuenta.
 3. Moderación: en desarrollo vale `PROVEEDOR_MODERACION=cloudflare`; en producción tiene que ser `openai` con `OPENAI_API_KEY` (el endpoint de moderación es gratuito).
 4. `docker compose up --build` sin el override de Ollama. Si cambias de modelo, actualiza sus tarifas `CLOUDFLARE_NEURONAS_*` y, si no es Gemma 4 o Qwen 3, `CLOUDFLARE_DESACTIVAR_RAZONAMIENTO=false`.
 
@@ -205,7 +206,7 @@ Todas están en `.env.example` (sin secretos; algunas traen su valor por defecto
 - Modo invitado (solo pruebas locales): `PERMITIR_INVITADOS`, `INVITADO_MINUTOS`, `INVITADO_RETENCION_MINUTOS`
 - Base de datos: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`
 - Proveedores: `PROVEEDOR_VISION`, `PROVEEDOR_TEXTO`, `PROVEEDOR_MODERACION`, `PROVEEDOR_IMAGEN`, `PROVEEDOR_CORREO`, `ALMACEN`
-- Cloudflare Workers AI: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_MODELO_VISION`, `CLOUDFLARE_MODELO_TEXTO`, `CLOUDFLARE_MODELO_MODERACION`, `CLOUDFLARE_MODELO_IMAGEN`, `CLOUDFLARE_PASOS_IMAGEN`, `CLOUDFLARE_DESACTIVAR_RAZONAMIENTO`, `CLOUDFLARE_TIMEOUT_S`, `CLOUDFLARE_USD_POR_MIL_NEURONAS`, `CLOUDFLARE_NEURONAS_*`
+- Cloudflare Workers AI: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID_2`…`_5` y `CLOUDFLARE_API_TOKEN_2`…`_5` (cuentas extra, ver abajo), `CLOUDFLARE_MODELO_VISION`, `CLOUDFLARE_MODELO_TEXTO`, `CLOUDFLARE_MODELO_MODERACION`, `CLOUDFLARE_MODELO_IMAGEN`, `CLOUDFLARE_PASOS_IMAGEN`, `CLOUDFLARE_DESACTIVAR_RAZONAMIENTO`, `CLOUDFLARE_TIMEOUT_S`, `CLOUDFLARE_USD_POR_MIL_NEURONAS`, `CLOUDFLARE_NEURONAS_*`
 - Ollama: `OLLAMA_URL`, `OLLAMA_MODELO_TEXTO`, `OLLAMA_MODELO_VISION`, `OLLAMA_MODELO_MODERACION`, `OLLAMA_TIMEOUT_S`
 - OpenAI: `OPENAI_API_KEY`, `OPENAI_MODELO_VISION`, `OPENAI_MODELO_TEXTO`, `OPENAI_MODELO_MODERACION`, `OPENAI_MODELO_IMAGEN`, `OPENAI_CALIDAD_IMAGEN`, `OPENAI_TAMANO_IMAGEN`, `OPENAI_ESFUERZO_RAZONAMIENTO`
 - Correo: `SMTP_HOST`, `SMTP_PUERTO`, `SMTP_USUARIO`, `SMTP_CONTRASENA`, `SMTP_REMITENTE`, `SMTP_SEGURIDAD`
