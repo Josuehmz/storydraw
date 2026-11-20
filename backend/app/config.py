@@ -18,6 +18,8 @@ _RAIZ_BACKEND = Path(__file__).resolve().parent.parent
 _ARCHIVOS_ENV = (_RAIZ_BACKEND.parent / ".env", _RAIZ_BACKEND / ".env")
 
 URL_BD_POR_DEFECTO = "postgresql+asyncpg://storydraw:storydraw@localhost:5432/storydraw"
+# Cuentas de Cloudflare Workers AI que se rotan: la 1 y las extra _2 a _5
+MAX_CUENTAS_CLOUDFLARE = 5
 
 
 class ConfigBD(BaseSettings):
@@ -96,6 +98,16 @@ class Settings(BaseSettings):
     # Cloudflare Workers AI: modelos verificados en developers.cloudflare.com/workers-ai/models
     cloudflare_account_id: str = ""
     cloudflare_api_token: SecretStr | None = None
+    # Cuentas extra (cada una con su cupo gratis diario): cuando una responde 429 por cupo,
+    # el backend pasa sola a la siguiente, en orden. Id y token van siempre en pareja.
+    cloudflare_account_id_2: str = ""
+    cloudflare_api_token_2: SecretStr | None = None
+    cloudflare_account_id_3: str = ""
+    cloudflare_api_token_3: SecretStr | None = None
+    cloudflare_account_id_4: str = ""
+    cloudflare_api_token_4: SecretStr | None = None
+    cloudflare_account_id_5: str = ""
+    cloudflare_api_token_5: SecretStr | None = None
     cloudflare_modelo_vision: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_texto: str = "@cf/google/gemma-4-26b-a4b-it"
     cloudflare_modelo_moderacion: str = "@cf/google/gemma-4-26b-a4b-it"
@@ -243,6 +255,7 @@ class Settings(BaseSettings):
             self.cloudflare_account_id and self.cloudflare_api_token
         ):
             raise ValueError("Faltan CLOUDFLARE_ACCOUNT_ID y CLOUDFLARE_API_TOKEN")
+        self._validar_cuentas_cloudflare()
         if self.proveedor_correo == "ninguno" and self.verificar_correo:
             raise ValueError(
                 "Con PROVEEDOR_CORREO=ninguno nadie podría confirmar su cuenta: "
@@ -253,6 +266,36 @@ class Settings(BaseSettings):
         if self.almacen == "s3" and not (self.s3_access_key and self.s3_secret_key):
             raise ValueError("Faltan S3_ACCESS_KEY y S3_SECRET_KEY")
         return self
+
+    def _validar_cuentas_cloudflare(self) -> None:
+        # Media cuenta es un error de pegado en el panel: mejor no arrancar que descubrirlo
+        # el día que se agote la primera.
+        for n in range(2, MAX_CUENTAS_CLOUDFLARE + 1):
+            cuenta = getattr(self, f"cloudflare_account_id_{n}")
+            token = getattr(self, f"cloudflare_api_token_{n}")
+            if bool(cuenta) != bool(token):
+                falta = f"CLOUDFLARE_API_TOKEN_{n}" if cuenta else f"CLOUDFLARE_ACCOUNT_ID_{n}"
+                raise ValueError(f"Cuenta {n} de Cloudflare incompleta: falta {falta}")
+        extra = self.cuentas_cloudflare_extra
+        if extra and not (self.cloudflare_account_id and self.cloudflare_api_token):
+            raise ValueError(
+                "Hay cuentas extra de Cloudflare pero faltan CLOUDFLARE_ACCOUNT_ID y "
+                "CLOUDFLARE_API_TOKEN (la cuenta 1)"
+            )
+        ids = [self.cloudflare_account_id, *(c for c, _ in extra)]
+        if len(set(ids)) != len(ids):
+            raise ValueError("Una cuenta de Cloudflare está repetida: cada una debe ser distinta")
+
+    @property
+    def cuentas_cloudflare_extra(self) -> list[tuple[str, SecretStr]]:
+        """Cuentas 2..5 completas, en orden (la 1 es CLOUDFLARE_ACCOUNT_ID)."""
+        cuentas = []
+        for n in range(2, MAX_CUENTAS_CLOUDFLARE + 1):
+            cuenta = getattr(self, f"cloudflare_account_id_{n}")
+            token = getattr(self, f"cloudflare_api_token_{n}")
+            if cuenta and token:
+                cuentas.append((cuenta, token))
+        return cuentas
 
     @staticmethod
     def _lista(valor: str) -> list[str]:

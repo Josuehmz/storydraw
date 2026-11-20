@@ -36,6 +36,8 @@ def create_app(settings: Settings | None = None, contenedor: Contenedor | None =
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
+        # httpx registra cada URL en INFO, y la de Cloudflare lleva el id de la cuenta
+        logging.getLogger("httpx").setLevel(logging.WARNING)
         if isinstance(c.almacen, AlmacenS3) and settings.entorno != "produccion":
             try:
                 await c.almacen.asegurar_bucket()
